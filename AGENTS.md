@@ -38,6 +38,7 @@ DUC_CalendarSync_AIBridge/
 ├── tests/
 │   └── test_calendar_mcp.py         # Bộ kiểm thử Pytest (10/10 PASS)
 ├── exports/                         # Thư mục lưu tệp .ics, custom_events.json & briefings/
+├── docs/                            # Thư mục lưu 4 báo cáo kỹ thuật chi tiết
 ├── HANDOFF-MACHINE-TRANSFER.md      # Tài liệu bàn giao chuyển máy & tiếp quản
 ├── pytest.ini                       # Cấu hình Pytest (pythonpath = .)
 ├── requirements.txt

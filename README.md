@@ -296,10 +296,11 @@ DUC_CalendarSync_AIBridge/
 ├── tests/
 │   └── test_calendar_mcp.py         # Bộ Kiểm Thử Tự Động Pytest (10/10 PASS)
 ├── exports/                         # Thư Mục Artifacts (.ics, custom_events.json, briefings/)
-├── BAO_CAO_TONG_KET_TOAN_DIEN_v1.4.0.md          # Báo Cáo Tổng Kết Toàn Diện v1.0.0 - v1.4.0
-├── BAO_CAO_CHI_TIET_THONG_BAO_DA_KENH_WECHAT_ZALO.md # Báo Cáo Chuyên Sâu Bắn Tin WeChat & Zalo
-├── BAO_CAO_CHI_TIET_LICH_QUET_VA_TASK_SCHEDULER.md   # Báo Cáo Chuyên Sâu Tự Động Hóa Task Scheduler
-├── BAO_CAO_CHI_TIET_LIEN_THONG_SMARTOPS_AIHUB.md     # Báo Cáo Chuyên Sâu Liên Thông Web UI Hub
+├── docs/                            # Thư Mục Chứa Toàn Bộ Báo Cáo Kỹ Thuật Chi Tiết
+│   ├── BAO_CAO_TONG_KET_TOAN_DIEN_v1.4.0.md          # Báo Cáo Tổng Kết Toàn Diện v1.0.0 - v1.4.0
+│   ├── BAO_CAO_CHI_TIET_THONG_BAO_DA_KENH_WECHAT_ZALO.md # Báo Cáo Chuyên Sâu Bắn Tin WeChat & Zalo
+│   ├── BAO_CAO_CHI_TIET_LICH_QUET_VA_TASK_SCHEDULER.md   # Báo Cáo Chuyên Sâu Tự Động Hóa Task Scheduler
+│   └── BAO_CAO_CHI_TIET_LIEN_THONG_SMARTOPS_AIHUB.md     # Báo Cáo Chuyên Sâu Liên Thông Web UI Hub
 ├── AGENTS.md                        # Workspace Rules & Lịch Sử AI Sessions
 ├── HANDOFF-MACHINE-TRANSFER.md      # Tài Liệu Bàn Giao Chuyển Giao Máy & Tiếp Quản
 ├── Push_To_GitHub_DucWorker97.bat   # Script Đẩy Git Tự Động (Tài khoản DucWorker97)
@@ -313,12 +314,12 @@ DUC_CalendarSync_AIBridge/
 
 ## 📚 Báo Cáo Kỹ Thuật Chi Tiết (Technical Reports)
 
-Hệ thống cung cấp bộ tài liệu báo cáo kỹ thuật toàn diện phục vụ kiểm toán, bàn giao và vận hành:
+Hệ thống cung cấp bộ tài liệu báo cáo kỹ thuật toàn diện trong thư mục [`docs/`](docs/) phục vụ kiểm toán, bàn giao và vận hành:
 
-1. 📄 [**Báo Cáo Tổng Kết Toàn Diện Dự Án (v1.0.0 → v1.4.0)**](BAO_CAO_TONG_KET_TOAN_DIEN_v1.4.0.md): Kiến trúc tổng quan, 11 MCP Tools, 3 chuỗi lịch chuẩn và ma trận kiểm thử tự động.
-2. 📲 [**Báo Cáo Chi Tiết: Bắn Thông Báo Đa Kênh (WeChat Work & Zalo)**](BAO_CAO_CHI_TIET_THONG_BAO_DA_KENH_WECHAT_ZALO.md): Định dạng thẻ màu WeChat, Rich-Text Zalo và giải pháp hàng đợi an toàn chống xung đột Chrome CDP Singleton.
-3. ⏰ [**Báo Cáo Chi Tiết: Lịch Quét & Vận Hành Tự Động Hàng Ngày (Task Scheduler & Sidecars)**](BAO_CAO_CHI_TIET_LICH_QUET_VA_TASK_SCHEDULER.md): Kiến trúc chạy ngầm `pythonw.exe`, bộ kịch bản quản trị 1-Click và 2 sidecar automations.
-4. 🌐 [**Báo Cáo Chi Tiết: Liên Thông DUC_SmartOps_AIHub & Web UI Tab 6**](BAO_CAO_CHI_TIET_LIEN_THONG_SMARTOPS_AIHUB.md): Chi tiết 8 REST API Endpoints, kiến trúc Control Center Web UI và cơ chế quét sổ cái ITSM theo Quy tắc 2 & 4.
+1. 📄 [**Báo Cáo Tổng Kết Toàn Diện Dự Án (v1.0.0 → v1.4.0)**](docs/BAO_CAO_TONG_KET_TOAN_DIEN_v1.4.0.md): Kiến trúc tổng quan, 11 MCP Tools, 3 chuỗi lịch chuẩn và ma trận kiểm thử tự động.
+2. 📲 [**Báo Cáo Chi Tiết: Bắn Thông Báo Đa Kênh (WeChat Work & Zalo)**](docs/BAO_CAO_CHI_TIET_THONG_BAO_DA_KENH_WECHAT_ZALO.md): Định dạng thẻ màu WeChat, Rich-Text Zalo và giải pháp hàng đợi an toàn chống xung đột Chrome CDP Singleton.
+3. ⏰ [**Báo Cáo Chi Tiết: Lịch Quét & Vận Hành Tự Động Hàng Ngày (Task Scheduler & Sidecars)**](docs/BAO_CAO_CHI_TIET_LICH_QUET_VA_TASK_SCHEDULER.md): Kiến trúc chạy ngầm `pythonw.exe`, bộ kịch bản quản trị 1-Click và 2 sidecar automations.
+4. 🌐 [**Báo Cáo Chi Tiết: Liên Thông DUC_SmartOps_AIHub & Web UI Tab 6**](docs/BAO_CAO_CHI_TIET_LIEN_THONG_SMARTOPS_AIHUB.md): Chi tiết 8 REST API Endpoints, kiến trúc Control Center Web UI và cơ chế quét sổ cái ITSM theo Quy tắc 2 & 4.
 
 ---
 
