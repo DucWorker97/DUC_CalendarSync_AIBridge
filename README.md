@@ -1,74 +1,229 @@
-# 📅 DUC_CalendarSync_AIBridge — Multi-Platform Calendar Sync & ITSM Smart Reminder MCP Server (`v1.2.0`)
+# 📅 DUC_CalendarSync_AIBridge
 
-> **Tác giả (Author):** Nguyễn Duy Đức (`DucWorker97`)  
-> **Chuẩn giao thức:** Model Context Protocol (`stdio` JSON-RPC 2.0)  
-> **Nền tảng hỗ trợ:** Google Calendar (OAuth CLI & 1-Click Web URL) • Microsoft Outlook Desktop (MAPI COM) • Chuẩn Quốc tế iCalendar RFC 5545 (`.ics`)
+> **Multi-Platform Calendar Sync & ITSM Smart Reminder MCP Server**  
+> *Hệ thống Cầu nối MCP Điều phối Lịch biểu Tự động Đa Nền tảng 2 Chiều & Nhắc Lịch Sự cố ITSM Thông minh*
+
+[![CI - Build & Test](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
+[![Protocol](https://img.shields.io/badge/MCP-stdio%20JSON--RPC%202.0-orange.svg)](https://modelcontextprotocol.io)
+[![Tests](https://img.shields.io/badge/Pytest-7%2F7%20PASS-brightgreen.svg)](tests/)
+[![Platforms](https://img.shields.io/badge/Platforms-Google%20Calendar%20%7C%20Outlook%20Desktop%20%7C%20RFC%205545-purple.svg)](#)
+[![Author](https://img.shields.io/badge/Author-DucWorker97-green.svg)](https://github.com/DucWorker97)
 
 ---
 
-## 🏗️ Sơ Đồ Kiến Trúc Hệ Thống
+## 📖 Giới Thiệu Tổng Quan (Executive Summary)
+
+**`DUC_CalendarSync_AIBridge`** là một **Model Context Protocol (MCP) Server** chuyên trách chuẩn `stdio` JSON-RPC 2.0, được thiết kế để kết nối trực tiếp các trợ lý AI hàng đầu (**Google Antigravity**, **Claude Desktop**, **Cursor**, **Cline**) với hệ thống quản lý lịch trình công việc thực tế trong môi trường vận hành nhà máy và bộ phận IT/MES:
+
+1. **Đồng Bộ Lịch Đa Nền Tảng 2 Chiều:** Kết nối đồng thời **Google Calendar** (OAuth CLI & 1-Click Web URL kèm `RRULE`), **Microsoft Outlook Desktop** (MAPI COM tự động ghim lịch vào thư mục `Lịch`), và **Chuẩn Quốc tế iCalendar RFC 5545** (`.ics` kèm múi giờ `Asia/Ho_Chi_Minh`, chu kỳ lặp `RRULE`, chuông báo `VALARM` và chữ ký xác thực toàn vẹn `MD5`).
+2. **Tự Động Nhắc Lịch Bù Đơn ITSM (`Bxx`):** Tự động quét sổ cái sự cố `THEO-DOI-BU-TICKET-ITSM.md` để phát hiện các đơn chưa hoàn tất hoặc thiếu Mã nhân viên (`V0xxxx`), tự động ghim lịch nhắc bù đơn kèm câu mẫu song ngữ VI–ZH (Quy tắc 2 & Quy tắc 4).
+3. **Phát Hiện Xung Đột & Gợi Ý Khung Giờ Trống (Free-Busy Finder):** Kiểm tra trùng lịch họp trước khi đặt sự kiện và tự động đề xuất 3 khung giờ trống khả dụng trong giờ hành chính (`08:00 - 17:30`).
+4. **Bản Tin Lịch Trình Đầu Ca / Cuối Ca:** Sinh báo cáo tóm tắt công việc trong ngày và checklist hành động theo ca (Sáng `08:00` / Chiều `17:15`) định dạng Markdown chuẩn đẹp.
+
+---
+
+## 🏗️ Sơ Đồ Kiến Trúc Hệ Thống (System Architecture)
 
 ```mermaid
-flowchart LR
-    AI["AI Assistant (Antigravity / Claude)"] <-->|"MCP JSON-RPC 2.0 (stdio)"| SRV["server.py (10 MCP Tools)"]
-    SRV --> ENG["calendar_engine.py (v1.2.0)"]
-    ENG <-->|"OAuth CLI + 1-Click URL"| GCAL["gcalendar_adapter.py (Google Calendar)"]
-    ENG <-->|"MAPI COM (olNonMeeting)"| OL["outlook_adapter.py (Outlook Desktop)"]
-    ENG -->|"RFC 5545 (.ics + MD5)"| ICS["ics_exporter.py (Master & Event .ics)"]
-    ENG <-->|"Quét Bxx & Quy tắc 4"| ITSM["itsm_reminder_watcher.py (THEO-DOI-BU-TICKET-ITSM.md)"]
+flowchart TD
+    subgraph Clients["🤖 AI Coding Assistants & MCP Clients"]
+        AGY["Google Antigravity"]
+        CLAUDE["Claude Desktop"]
+        CURSOR["Cursor / Cline"]
+    end
+
+    subgraph MCPServer["⚡ DUC_CalendarSync_AIBridge (server.py v1.2.0)"]
+        STDIO["JSON-RPC 2.0 (stdio) Handshake"]
+        TOOLS["10 MCP Tools Registry"]
+        STDIO <--> TOOLS
+    end
+
+    subgraph CoreEngine["🧠 Điều Phối Trung Tâm (calendar_engine.py)"]
+        STATUS["cal_status"]
+        SYNC["cal_sync_all"]
+        CRUD["cal_create_event\ncal_update_event\ncal_delete_event"]
+        QUERY["cal_query_schedule\ncal_check_conflicts"]
+        BRIEF["cal_daily_briefing"]
+        REMIND["cal_remind_pending_itsm"]
+    end
+
+    subgraph Adapters["🔌 Nền Tảng Tích Hợp (Adapters)"]
+        GCAL["Google Calendar Adapter\n(gcalendar OAuth CLI + Web URL)"]
+        OL["Outlook Desktop COM Adapter\n(win32com MAPI - olNonMeeting)"]
+        ICS["iCalendar RFC 5545 Exporter\n(Asia/Ho_Chi_Minh + MD5 Checksum)"]
+        ITSM["ITSM Reminder Watcher\n(THEO-DOI-BU-TICKET-ITSM.md)"]
+    end
+
+    subgraph Destinations["🎯 Điểm Đến Lịch Biểu Thực Tế"]
+        GCLOUD[("Google Calendar Web / App")]
+        OUTLOOK_APP[("Microsoft Outlook Desktop Client")]
+        ICS_FILES[("Kho lưu trữ .ics & Master Schedule")]
+        LEDGER[("Sổ Cái ITSM & BMC Smart IT")]
+    end
+
+    Clients <-->|"stdio"| MCPServer
+    TOOLS <--> CoreEngine
+    CoreEngine --> Adapters
+    GCAL <--> GCLOUD
+    OL <--> OUTLOOK_APP
+    ICS --> ICS_FILES
+    ITSM <--> LEDGER
 ```
 
 ---
 
-## 🌟 Tính Năng Cốt Lõi
+## 🛠️ Danh Mục 10 MCP Tools Hoàn Chỉnh (`v1.2.0`)
 
-1. **Đặt, Dời Lịch & Xóa Sự Kiện Tức Thì Đa Nền Tảng (`cal_create_event`, `cal_update_event`, `cal_delete_event`):**
-   - Chỉ cần ra lệnh bằng ngôn ngữ tự nhiên trong khung chat AI, MCP Server tự động đẩy, cập nhật (reschedule) hoặc xóa sự kiện đồng thời trên **Google Calendar**, **Microsoft Outlook Desktop** (thư mục `Lịch`, `MeetingStatus = 0` không gửi email làm phiền người khác) và xuất tệp `.ics` chuẩn RFC 5545.
-   - Cơ chế bảo vệ tự động 3 chuỗi lịch vận hành cốt lõi khỏi thao tác sửa/xóa nhầm.
-2. **Đồng Bộ Chuỗi Lịch Vận Hành Tự Động (`cal_sync_all`):**
-   - Tự động duy trì 3 chuỗi lịch định kỳ kèm quy tắc lặp `RRULE`:
-     - **`DAILY_BACKUP_1745`** (*17:45 Thứ 2 – Thứ 7*): Sao lưu Đám mây Tự động (Kho Nóng ZIP + Kho Lạnh H.265) & Chưng cất Hòm thư.
-     - **`WEEKLY_REPORT_SUN_1500`** (*15:00 Chủ Nhật hàng tuần*): Lập & Kiểm toán 9 Lớp Báo cáo Tuần MES Song ngữ (VI–ZH).
-     - **`MONTHLY_ITSM_28_1600`** (*16:00 ngày 28 hàng tháng*): Đối soát Sổ cái Sự cố & Khóa sổ Bù đơn Ticket ITSM Tháng.
-3. **Tự Động Nhắc Lịch Khi Có Sự Cố Chờ Bù Đơn ITSM (`cal_remind_pending_itsm`):**
-   - Tự động quét sổ cái `THEO-DOI-BU-TICKET-ITSM.md` để phát hiện các Candidate `Bxx` chưa đóng hoặc đang chờ xác thực Mã nhân viên (`V0xxxx`).
-   - Tự động ghim sự kiện nhắc việc **`[ITSM-Remind] 🎫 Nhắc Bù Đơn Ticket ITSM`** vào khung giờ hành chính tiếp theo (kèm sẵn mẫu câu hỏi Mã nhân viên song ngữ VI–ZH theo Quy tắc 4).
-4. **Đọc Lịch Trình 2 Chiều, Phát Hiện Xung Đột & Bản Tin Đầu/Cuối Ca (`cal_query_schedule`, `cal_check_conflicts`, `cal_daily_briefing`):**
-   - Đọc lịch trình thực tế trong ngày/tuần hợp nhất từ Managed Store, Google Calendar và Microsoft Outlook Desktop.
-   - Kiểm tra trùng lịch họp (Free-Busy Finder) và tự động đề xuất 3 khung giờ trống gần nhất trong giờ hành chính (`08:00 - 17:30`).
-   - Sinh **Bản tin Lịch trình Đầu ca (`MORNING` - 08:00) / Cuối ca (`EVENING` - 17:15)** định dạng Markdown sẵn sàng gửi qua WeChat / Zalo.
+| # | Tên MCP Tool | Tham số đầu vào (Parameters) | Mô tả Chức năng | Đặc điểm Kỹ thuật |
+|---|---|---|---|---|
+| 1 | **`cal_status`** | *Không có* | Kiểm tra trạng thái kết nối Google Calendar OAuth, Outlook Desktop MAPI, kho `.ics` và số lượng đơn `Bxx` chờ bù. | Báo cáo chi tiết đường dẫn CLI, phiên bản, tình trạng thư mục `Lịch` và số đơn tồn đọng. |
+| 2 | **`cal_sync_all`** | `dry_run: bool = False` | Đồng bộ tức thì 3 chuỗi lịch vận hành chuẩn và lịch tùy chỉnh lên cả 3 nền tảng. | Idempotent chống trùng lặp qua thẻ `[SMARTOPS-ID:...]`, xuất `DUC_SmartOps_Master_Schedule.ics`. |
+| 3 | **`cal_create_event`** | `title`, `start_iso`, `duration_minutes`, `description`, `location`, `recurrence_type`, `reminder_minutes`, `dry_run` | Đặt lịch sự kiện mới tức thì lên Google Calendar, Outlook Desktop và kho `.ics`. | Hỗ trợ quy tắc lặp `NONE`, `DAILY_WORKDAYS`, `WEEKLY_SUN`, `MONTHLY_28`, tự sinh URL 1-Click. |
+| 4 | **`cal_remind_pending_itsm`** | `candidate_id`, `customer_name`, `issue_summary`, `reminder_iso`, `dry_run` | Quét sổ cái `THEO-DOI-BU-TICKET-ITSM.md` (hoặc nhận sự cố mới) để tự động đặt lịch nhắc bù đơn. | Đính kèm sẵn câu hỏi Mã NV (`V0xxxx`) song ngữ VI–ZH theo chuẩn Quy tắc 2 & 4. |
+| 5 | **`cal_list_events`** | *Không có* | Liệt kê toàn bộ các chuỗi sự kiện đang quản lý kèm liên kết 1-Click. | Trả về liên kết sâu Google Calendar Web, Outlook Web Deep-Link và đường dẫn tệp `.ics`. |
+| 6 | **`cal_delete_event`** | `event_id`, `dry_run: bool = False` | Xóa sự kiện tùy chỉnh theo `event_id` đồng bộ trên kho `.ics`, Outlook Desktop và Google Calendar. | Có cơ chế khóa bảo vệ an toàn (`PROTECTED_SYSTEM_EVENT`) cho 3 chuỗi lịch vận hành cốt lõi. |
+| 7 | **`cal_query_schedule`** | `date_from_iso`, `days: int = 7`, `include_live_sources: bool = True` | Đọc lịch trình thực tế 2 chiều trong ngày/tuần từ Managed Store, Google Calendar và Outlook Desktop. | Hợp nhất sự kiện từ nhiều nguồn, sắp xếp theo thứ tự thời gian tăng dần. |
+| 8 | **`cal_check_conflicts`** | `start_iso`, `duration_minutes: int = 30`, `include_live_sources: bool = False` | Kiểm tra xung đột lịch họp (Free-Busy Finder) tại khung giờ dự kiến. | Tự động tính toán và đề xuất **3 khung giờ trống gần nhất** trong giờ hành chính (`08:00 - 17:30`). |
+| 9 | **`cal_update_event`** | `event_id`, `new_title`, `new_start_iso`, `new_duration_minutes`, `new_description`, `new_location`, `new_recurrence_type`, `new_reminder_minutes`, `dry_run` | Dời lịch (reschedule) hoặc cập nhật tiêu đề, thời lượng, mô tả của sự kiện theo `event_id`. | Đồng bộ cập nhật trên cả Google Calendar, Outlook Desktop, tệp `.ics` và `custom_events.json`. |
+| 10 | **`cal_daily_briefing`** | `date_iso`, `shift_mode: str = 'AUTO'`, `include_live_sources: bool = False` | Sinh Bản tin Lịch trình Đầu ca (`MORNING` - 08:00) hoặc Cuối ca (`EVENING` - 17:15). | Định dạng Markdown hoàn chỉnh kèm checklist ca làm việc, sẵn sàng đẩy qua WeChat / Zalo. |
 
 ---
 
-## 🛠️ Danh Mục 10 Công Cụ MCP (MCP Tools — `v1.2.0`)
+## ⏰ 3 Chuỗi Lịch Vận Hành Tự Động Chuẩn
 
-| Tên MCP Tool | Mô tả Chức năng |
-|---|---|
-| `cal_status` | Kiểm tra kết nối Google Calendar OAuth, Microsoft Outlook Desktop MAPI, kho `.ics` và số lượng đơn `Bxx` chờ bù. |
-| `cal_sync_all` | Đồng bộ tức thì toàn bộ lịch vận hành chuẩn và lịch tùy chỉnh lên Google Calendar, Outlook Desktop & `.ics`. |
-| `cal_create_event` | Đặt lịch sự kiện mới tức thì (hỗ trợ lặp `NONE`, `DAILY_WORKDAYS`, `WEEKLY_SUN`, `MONTHLY_28`). |
-| `cal_remind_pending_itsm` | Quét sổ cái sự cố `Bxx` chờ bù đơn / thiếu Mã NV và tự động ghim lịch nhắc trên Google Calendar & Outlook. |
-| `cal_list_events` | Liệt kê toàn bộ lịch trình đang quản lý kèm liên kết 1-Click Google Calendar & Outlook Web. |
-| `cal_delete_event` | Xóa sự kiện tùy chỉnh theo `event_id` đồng bộ trên kho `.ics`, Microsoft Outlook Desktop và Google Calendar. |
-| `cal_query_schedule` | Đọc lịch trình thực tế 2 chiều trong ngày/tuần từ Managed Store, Google Calendar & Outlook Desktop. |
-| `cal_check_conflicts` | Kiểm tra xung đột lịch họp tại khung giờ dự kiến và gợi ý 3 khung giờ trống gần nhất. |
-| `cal_update_event` | Dời lịch (reschedule) hoặc cập nhật tiêu đề, thời lượng, mô tả, địa điểm của sự kiện tùy chỉnh theo `event_id`. |
-| `cal_daily_briefing` | Sinh Bản tin Lịch trình Đầu ca (`MORNING` - 08:00) / Cuối ca (`EVENING` - 17:15) kèm trạng thái ITSM & Checklist. |
+Hệ thống được cấu hình sẵn 3 chuỗi lịch định kỳ đóng vai trò "xương sống" cho hoạt động vận hành:
+
+1. **`DAILY_BACKUP_1745` (17:45 Thứ 2 – Thứ 7):**
+   - *Mục tiêu:* Sao lưu Đám mây Tự động (Kho Nóng Snapshot ZIP + MD5 và Kho Lạnh Video H.265) & Chưng cất Hòm thư.
+   - *Chu kỳ lặp:* `RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA`.
+   - *Quy tắc:* Tuân thủ nghiêm ngặt **Quy tắc 12 (Bảo toàn 100% dữ liệu)**.
+2. **`WEEKLY_REPORT_SUN_1500` (15:00 Chủ Nhật hàng tuần):**
+   - *Mục tiêu:* Biên soạn & Kiểm toán 9 Lớp Báo cáo Tuần MES Song ngữ (VI–ZH).
+   - *Chu kỳ lặp:* `RRULE:FREQ=WEEKLY;BYDAY=SU`.
+   - *Quy tắc:* Tuân thủ **Quy tắc 11** (tiêu đề nằm trên bảng, font Microsoft YaHei, xuất PDF và tạo thư nháp Outlook chờ duyệt 4D).
+3. **`MONTHLY_ITSM_28_1600` (16:00 Ngày 28 hàng tháng):**
+   - *Mục tiêu:* Rà soát Sổ cái Sự cố & Khóa sổ Bù đơn Ticket ITSM Tháng.
+   - *Chu kỳ lặp:* `RRULE:FREQ=MONTHLY;BYMONTHDAY=28`.
+   - *Quy tắc:* Đảm bảo 100% Candidate `Bxx` được đối soát Customer và đóng hoàn tất trên BMC Remedy Smart IT.
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt & Kiểm Thử
+## 🔒 Nguyên Tắc Bảo Mật & An Toàn Vận Hành (Safety & Privacy)
 
+- **Không gửi thư mời ra ngoài (Zero External Spam):**
+  - Trên **Microsoft Outlook Desktop COM**: Luôn thiết lập `appt.MeetingStatus = 0` (`olNonMeeting`) và tuyệt đối không thêm danh sách `Recipients`. Sự kiện chỉ đóng vai trò nhắc lịch cá nhân trên máy trạm của kỹ sư vận hành.
+  - Trên **Google Calendar CLI**: Luôn truyền tham số bắt buộc `--send-updates none` trong mọi lệnh tạo / dời lịch / xóa.
+- **Kết nối COM Bất đồng bộ, Không gây treo (Non-blocking):**
+  - Sử dụng cơ chế `GetActiveObject("Outlook.Application")` ưu tiên, có cơ chế fallback an toàn sang `Dispatch` khi bảng ROT chưa sẵn sàng, triệt tiêu nguy cơ treo tiến trình nền `OUTLOOK.EXE -Embedding`.
+- **Chống Trùng Lặp Tuyệt Đối (Idempotency):**
+  - Mọi sự kiện do AI Bridge khởi tạo đều gắn định danh duy nhất `[SMARTOPS-ID:<event_id>]`. Trước khi tạo mới, hệ thống tự động quét kiểm tra sự kiện đã tồn tại trên Google Calendar hoặc Outlook hay chưa để chuyển sang chế độ cập nhật (Upsert).
+- **Khóa Bảo Vệ Sự Kiện Hệ Thống:**
+  - 3 chuỗi lịch vận hành cốt lõi được bảo vệ chống xóa hoặc dời lịch tùy tiện thông qua mã kiểm soát `PROTECTED_SYSTEM_EVENT`.
+- **Git Hygiene & Bảo Mật Tuyệt Đối:**
+  - File cấu hình `.gitignore` loại trừ triệt để `.env`, các file token `*token*.json`, credential, file lịch động (`exports/*.ics`) và thư mục tạm `.pytest_tmp/`.
+
+---
+
+## 🚀 Hướng Dẫn Cài Đặt & Khởi Chạy (Quick Start)
+
+### 1. Cài đặt Thư viện Phụ thuộc
 ```bash
-# 1. Cài đặt thư viện
 pip install -r requirements.txt
-
-# 2. Chạy tự kiểm định (Self-Test 10 MCP Tools)
-python server.py --selftest
-
-# 3. Tự động đăng ký vào mcp_config.json (Antigravity)
-python server.py --register-mcp
-
-# 4. Chạy bộ kiểm thử tự động Pytest (7/7 PASS)
-python -m pytest tests/ -q
 ```
+
+### 2. Tự Kiểm Định Nhanh (Self-Test Mode — Không mở stdio)
+```bash
+python server.py --selftest
+```
+*Kết quả mẫu:*
+```json
+{
+  "selftest": "PASS",
+  "version": "1.2.0",
+  "mcp_sdk_ready": true,
+  "status_check": "READY",
+  "sync_dry_run_events": 3,
+  "daily_briefing_ready": true,
+  "tools": 10
+}
+```
+
+### 3. Tự Động Đăng Ký vào `mcp_config.json` (1-Click Setup)
+```bash
+python server.py --register-mcp
+```
+
+### 4. Chạy Toàn Bộ Bộ Kiểm Thử Tự Động Pytest
+```bash
+python -m pytest tests/ -v
+```
+*(Hiện tại 7/7 bài kiểm thử đều PASS 100% trên Python 3.10 – 3.14).*
+
+---
+
+## ⚙️ Cấu Hình MCP Clients (Configuration Guide)
+
+### Cho Google Antigravity / Claude Desktop / Cursor
+Thêm đoạn cấu hình sau vào tệp `mcp_config.json` (hoặc `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "DUC_CalendarSync_AIBridge": {
+      "command": "python",
+      "args": [
+        "-u",
+        "-X",
+        "utf8",
+        "D:/DucWorker/DUC_SmartOps_AIHub/mcp_bridges/DUC_CalendarSync_AIBridge/server.py"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": "D:/DucWorker/DUC_SmartOps_AIHub/mcp_bridges/DUC_CalendarSync_AIBridge"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 📁 Cấu Trúc Thư Mục Dự Án (Project Structure)
+
+```text
+DUC_CalendarSync_AIBridge/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                   # GitHub Actions CI matrix (Windows & Ubuntu, Python 3.10 - 3.12)
+├── server.py                        # MCP Server Entrypoint (10 Tools + --selftest + --register-mcp)
+├── src/
+│   ├── __init__.py
+│   ├── models.py                    # SmartOpsCalendarEvent + 3 Chuỗi Lịch Vận Hành Chuẩn
+│   ├── calendar_engine.py           # Bộ Điều Phối Trung Tâm (10 Nghiệp Vụ Cốt Lõi)
+│   ├── gcalendar_adapter.py         # Cầu Nối Google Calendar (OAuth CLI + Web Deep-Link)
+│   ├── outlook_adapter.py           # Cầu Nối Microsoft Outlook Desktop (MAPI COM)
+│   ├── ics_exporter.py              # Bộ Xuất Chuẩn RFC 5545 (.ics) + Mã Băm MD5
+│   └── itsm_reminder_watcher.py     # Bộ Quét Sổ Cái ITSM & Lập Lịch Nhắc Bù Đơn
+├── tests/
+│   └── test_calendar_mcp.py         # Bộ Kiểm Thử Tự Động Pytest (7/7 PASS)
+├── exports/                         # Thư Mục Artifacts (.ics & custom_events.json)
+├── AGENTS.md                        # Workspace Rules & Lịch Sử AI Sessions
+├── HANDOFF-MACHINE-TRANSFER.md      # Tài Liệu Bàn Giao Chuyển Giao Máy & Tiếp Quản
+├── Push_To_GitHub_DucWorker97.bat   # Script Đẩy Git Tự Động (Tài khoản DucWorker97)
+├── pytest.ini                       # Cấu Hình Pytest (pythonpath = .)
+├── requirements.txt                 # Danh Mục Thư Viện Python
+├── LICENSE                          # Giấy Phép Mã Nguồn Mở MIT
+└── README.md                        # Hồ Sơ Dự Án & Hướng Dẫn Sử Dụng
+```
+
+---
+
+## 👨‍💻 Tác Giả & Bản Quyền (Author & License)
+
+- **Tác giả:** Nguyễn Duy Đức (**`DucWorker97`**)
+- **GitHub Repository:** [https://github.com/DucWorker97/DUC_CalendarSync_AIBridge](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge)
+- **Hệ sinh thái:** `DUC_SmartOps_AIHub`
+- **Giấy phép:** [MIT License](LICENSE) — Tự do sử dụng, chỉnh sửa và tích hợp vào các dự án vận hành công nghiệp & cá nhân.
