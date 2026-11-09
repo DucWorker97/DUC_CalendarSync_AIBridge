@@ -545,6 +545,10 @@ def _deliver_zalo_queue_cli(queue_file_str: str) -> None:
             return
 
         olaz_dir = DEFAULT_HUB_ROOT / "mcp_bridges" / "DUC_OLAZ"
+        for k in [k for k in list(sys.modules.keys()) if k == "src" or k.startswith("src.")]:
+            del sys.modules[k]
+        if str(_REPO_ROOT) in sys.path:
+            sys.path.remove(str(_REPO_ROOT))
         if str(olaz_dir) not in sys.path:
             sys.path.insert(0, str(olaz_dir))
         from src.tools.messaging import zalo_send_message  # type: ignore
