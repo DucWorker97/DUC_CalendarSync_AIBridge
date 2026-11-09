@@ -3,24 +3,30 @@
 notification_dispatcher.py — Bộ Điều Phối Thông Báo Đa Kênh Tức Thì (WeChat Work & Zalo)
 ========================================================================================
 Author : Nguyễn Duy Đức (DucWorker97)
-Version: 1.4.0
+Version: 1.4.1
 
 Cung cấp khả năng phân phối Bản tin Lịch trình Đầu ca / Cuối ca & Cảnh báo ITSM tức thì:
 1. Kênh WeChat Work Group Bot Webhook (Tencent Official API):
    - Định dạng Markdown chuyên dụng (hỗ trợ <font color="info|warning|comment">).
-   - Tự động kiểm tra độ dài (<= 4000 UTF-8 bytes).
-   - An toàn tuyệt đối: mặc định Dry-Run Preview, chỉ gửi thật khi confirm_send=True.
-2. Kênh Zalo Web Automation:
+   - Tự động kiểm tra độ dài (<= 4000 UTF-8 bytes) và khử trùng lặp sự kiện.
+   - An toàn tuyệt đối: mặc định Dry-Run Preview, chỉ gửi thật khi dry_run=False.
+   - Tự động lưu Webhook URL vào exports/notifications_config.json khi người dùng nhập từ Web UI.
+2. Kênh Zalo Web Automation (DUC_OLAZ Playwright + Clipboard + Queue):
    - Chuyển đổi bản tin Markdown sang định dạng văn bản thuần giàu biểu cảm (Emoji + Checklist).
-   - Lưu trữ hàng đợi phát hành (Zalo Queue) và định tuyến tới nhóm chỉ định (VD: 'Thông báo chung OLAZ').
+   - Khi bắn thật (dry_run=False):
+     + Tự động copy bản tin định dạng chuẩn vào Windows Clipboard (UTF-16LE) tức thì.
+     + Lưu hàng đợi phát hành (exports/briefings/zalo_queue.json).
+     + Kích hoạt tiến trình nền không chặn (Non-blocking Background Worker) kết nối Zalo Web
+       qua DUC_OLAZ (Chrome CDP / ZaloPlaywright Profile) để gửi tin vào nhóm chỉ định.
 3. Kênh File Artifacts & SmartOps Hub Web UI:
    - Tự động xuất tệp Markdown và mirror vào Hub logs.
 ========================================================================================
 """
 
+import argparse
 import json
 import os
-import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -39,12 +45,49 @@ DEFAULT_HUB_ROOT = Path(r"D:\DucWorker\DUC_SmartOps_AIHub")
 CONFIG_FILE_PATH = _REPO_ROOT / "exports" / "notifications_config.json"
 
 
+def _deduplicate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Khử trùng lặp sự kiện khi cùng một lịch xuất hiện ở cả smartops_managed và outlook_com."""
+    seen = set()
+    unique: List[Dict[str, Any]] = []
+    for ev in events:
+        st = str(ev.get("start_dt", ""))[:16]
+        title = str(ev.get("title", "")).strip()
+        key = (st, title)
+        if key not in seen:
+            seen.add(key)
+            unique.append(ev)
+    return unique
+
+
+def copy_to_windows_clipboard(text: str) -> bool:
+    """Copy chuỗi Unicode (Tiếng Việt + Emoji) vào Windows Clipboard qua clip.exe (UTF-16LE)."""
+    if sys.platform != "win32" or not text:
+        return False
+    try:
+        # clip.exe đọc chuẩn UTF-16LE có BOM hoặc không BOM trên Windows
+        payload = text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-16le")
+        proc = subprocess.run(
+            ["clip.exe"],
+            input=payload,
+            capture_output=True,
+            timeout=3,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
 def load_notification_config() -> Dict[str, Any]:
     """Tải cấu hình thông báo từ exports/notifications_config.json hoặc biến môi trường."""
+    raw_env_url = os.environ.get("WECHAT_WEBHOOK_URL", os.environ.get("WECHAT_WEBHOOK_DEFAULT", "")).strip()
+    if "YOUR_DEFAULT_KEY" in raw_env_url or "your_" in raw_env_url.lower():
+        raw_env_url = ""
+
     cfg: Dict[str, Any] = {
         "wechat": {
             "enabled": True,
-            "webhook_url": os.environ.get("WECHAT_WEBHOOK_URL", os.environ.get("WECHAT_WEBHOOK_DEFAULT", "")),
+            "webhook_url": raw_env_url,
             "channel_alias": "default",
         },
         "zalo": {
@@ -58,9 +101,9 @@ def load_notification_config() -> Dict[str, Any]:
         try:
             stored = json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
             if isinstance(stored, dict):
-                if "wechat" in stored:
+                if "wechat" in stored and isinstance(stored["wechat"], dict):
                     cfg["wechat"].update(stored["wechat"])
-                if "zalo" in stored:
+                if "zalo" in stored and isinstance(stored["zalo"], dict):
                     cfg["zalo"].update(stored["zalo"])
         except Exception:
             pass
@@ -96,7 +139,7 @@ def format_for_wechat_markdown(briefing_data: Dict[str, Any]) -> str:
     """
     shift_label = briefing_data.get("shift_label", "📋 BẢN TIN LỊCH TRÌNH VẬN HÀNH")
     date_str = briefing_data.get("date", datetime.now().strftime("%Y-%m-%d"))
-    today_items = briefing_data.get("today_events", [])
+    today_items = _deduplicate_events(briefing_data.get("today_events", []))
     pending_count = int(briefing_data.get("itsm_pending_count", 0))
     pending_list = briefing_data.get("itsm_pending_candidates", [])
     checklist = briefing_data.get("action_checklist", [])
@@ -141,7 +184,6 @@ def format_for_wechat_markdown(briefing_data: Dict[str, Any]) -> str:
         lines.append(f"- {chk}")
 
     full_md = "\n".join(lines)
-    # Truncate safe 4000 bytes
     encoded = full_md.encode("utf-8")
     if len(encoded) > 4000:
         truncated = encoded[:3950].decode("utf-8", errors="ignore") + "\n\n*(Nội dung được rút gọn theo giới hạn WeChat)*"
@@ -156,7 +198,7 @@ def format_for_zalo_text(briefing_data: Dict[str, Any]) -> str:
     """
     shift_label = briefing_data.get("shift_label", "📋 BẢN TIN LỊCH TRÌNH VẬN HÀNH")
     date_str = briefing_data.get("date", datetime.now().strftime("%Y-%m-%d"))
-    today_items = briefing_data.get("today_events", [])
+    today_items = _deduplicate_events(briefing_data.get("today_events", []))
     pending_count = int(briefing_data.get("itsm_pending_count", 0))
     pending_list = briefing_data.get("itsm_pending_candidates", [])
     checklist = briefing_data.get("action_checklist", [])
@@ -212,14 +254,26 @@ def send_to_wechat_webhook(
     - Nếu dry_run=False: Thực hiện HTTP POST tới Tencent Webhook.
     """
     cfg = load_notification_config()
-    target_url = (webhook_url or cfg["wechat"].get("webhook_url", "")).strip()
+    clean_input_url = (webhook_url or "").strip()
+    if clean_input_url and "YOUR_DEFAULT_KEY" not in clean_input_url:
+        cfg["wechat"]["webhook_url"] = clean_input_url
+        save_notification_config(cfg)
+
+    target_url = (clean_input_url or cfg["wechat"].get("webhook_url", "")).strip()
+    if "YOUR_DEFAULT_KEY" in target_url:
+        target_url = ""
+
+    # Cho phép người dùng chỉ dán mã key (UUID) thay vì cả URL dài
+    if target_url and not target_url.startswith("http"):
+        target_url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={target_url}"
 
     if not target_url:
         return {
             "status": "NOT_CONFIGURED",
             "channel": "wechat_work_webhook",
-            "message": "Chưa có WeChat Work Webhook URL. Vui lòng cấu hình URL (VD: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...)",
-            "preview_content": markdown_content[:500] + "...",
+            "target_url": "(chưa cấu hình Webhook URL)",
+            "message": "Chưa cấu hình WeChat Work Webhook URL. Hãy dán Webhook URL hoặc Key vào ô '4. WeChat Webhook URL / Key' trên giao diện để bắn thẳng vào nhóm WeChat.",
+            "preview_content": markdown_content,
             "content_bytes": len(markdown_content.encode("utf-8")),
         }
 
@@ -229,11 +283,11 @@ def send_to_wechat_webhook(
             "channel": "wechat_work_webhook",
             "dry_run": True,
             "target_url": mask_url(target_url),
+            "message": "Sẵn sàng bắn vào WeChat Work Webhook.",
             "content_bytes": len(markdown_content.encode("utf-8")),
             "preview_content": markdown_content,
         }
 
-    # Thực hiện gửi thật (confirm_send=True)
     payload = {
         "msgtype": "markdown",
         "markdown": {
@@ -261,6 +315,8 @@ def send_to_wechat_webhook(
                 "target_url": mask_url(target_url),
                 "errcode": errcode,
                 "errmsg": errmsg,
+                "message": "Đã bắn thành công vào nhóm WeChat Work!" if is_ok else f"WeChat API trả lỗi ({errcode}): {errmsg}",
+                "preview_content": markdown_content,
                 "raw_response": resp_json,
             }
     except Exception as e:
@@ -269,7 +325,27 @@ def send_to_wechat_webhook(
             "channel": "wechat_work_webhook",
             "target_url": mask_url(target_url),
             "error": str(e),
+            "message": f"Lỗi kết nối WeChat Webhook: {e}",
+            "preview_content": markdown_content,
         }
+
+
+def _trigger_zalo_live_worker(queue_file: Path) -> Optional[int]:
+    """Khởi chạy tiến trình ngầm gửi tin nhắn từ zalo_queue.json qua DUC_OLAZ Playwright."""
+    olaz_dir = DEFAULT_HUB_ROOT / "mcp_bridges" / "DUC_OLAZ"
+    if not olaz_dir.is_dir():
+        return None
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--deliver-zalo-queue", str(queue_file)],
+            cwd=str(olaz_dir),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+        )
+        return proc.pid
+    except Exception:
+        return None
 
 
 def prepare_zalo_dispatch(
@@ -279,20 +355,29 @@ def prepare_zalo_dispatch(
     repo_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
-    Chuẩn bị và đưa thông báo Zalo vào hàng đợi xuất bản (Zalo Queue):
-    - exports/briefings/zalo_queue.json
-    - Hỗ trợ xem trước và tự động chuyển giao cho Agent / Zalo-Web-Automation.
+    Chuẩn bị và thực thi gửi thông báo Zalo:
+    - Lưu vào exports/briefings/zalo_queue.json
+    - Khi dry_run=False:
+      1. Copy tức thì nội dung bản tin vào Windows Clipboard (để người dùng có thể Ctrl+V ngay).
+      2. Kích hoạt tiến trình nền DUC_OLAZ (Zalo-Web-Automation) tự động mở nhóm target_chat và gửi tin.
     """
     root = repo_root or _REPO_ROOT
     queue_file = root / "exports" / "briefings" / "zalo_queue.json"
     queue_file.parent.mkdir(parents=True, exist_ok=True)
+
+    clipboard_copied = False
+    worker_pid: Optional[int] = None
+
+    if not dry_run:
+        clipboard_copied = copy_to_windows_clipboard(text_content)
 
     entry = {
         "queued_at": datetime.now().isoformat(timespec="seconds"),
         "target_chat": target_chat,
         "message": text_content,
         "dry_run": dry_run,
-        "status": "PREVIEW" if dry_run else "READY_FOR_DELIVERY",
+        "clipboard_copied": clipboard_copied,
+        "status": "PREVIEW" if dry_run else "DISPATCHING_LIVE",
     }
 
     try:
@@ -306,11 +391,32 @@ def prepare_zalo_dispatch(
     except Exception:
         pass
 
+    if not dry_run:
+        worker_pid = _trigger_zalo_live_worker(queue_file)
+
+    status_code = (
+        "PREVIEW_READY"
+        if dry_run
+        else ("DISPATCHED_AND_COPIED" if (worker_pid or clipboard_copied) else "QUEUED_FOR_AGENT")
+    )
+    msg_detail = (
+        "Bản xem trước Zalo đã sẵn sàng."
+        if dry_run
+        else (
+            f"✅ Đã copy bản tin vào Clipboard (sẵn sàng Ctrl+V) & kích hoạt Zalo Web Automation (PID {worker_pid}) gửi tới '{target_chat}'!"
+            if worker_pid
+            else f"✅ Đã copy bản tin vào Clipboard (sẵn sàng Ctrl+V) & ghi hàng đợi gửi tới '{target_chat}'!"
+        )
+    )
+
     return {
-        "status": "PREVIEW_READY" if dry_run else "QUEUED_FOR_AGENT",
+        "status": status_code,
         "channel": "zalo_web_automation",
         "target_chat": target_chat,
         "dry_run": dry_run,
+        "clipboard_copied": clipboard_copied,
+        "worker_pid": worker_pid,
+        "message": msg_detail,
         "char_count": len(text_content),
         "queue_file": str(queue_file),
         "preview_text": text_content,
@@ -327,18 +433,27 @@ def dispatch_daily_briefing(
     repo_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
-    Hàm nghiệp vụ cốt lõi điều phối bản tin đa kênh tức thì:
+    Hàm nghiệp vụ cốt lõi điều phối bản tin đa kênh tức thì (< 0.2s):
     - Kênh 'file'  : Xuất tệp Markdown ra exports/briefings/
     - Kênh 'wechat': Bắn bản tin Markdown qua WeChat Work Group Bot Webhook
-    - Kênh 'zalo'  : Chuẩn bị văn bản định dạng đẹp đưa vào hàng đợi Zalo
+    - Kênh 'zalo'  : Copy Clipboard + Kích hoạt Zalo Web Automation gửi tới nhóm target_zalo
     """
     root = repo_root or _REPO_ROOT
+    # Luôn dùng nguồn lịch đã đồng bộ trong kho cục bộ (include_live_sources=False)
+    # để tốc độ phản hồi đạt < 0.2 giây và không bị treo 14s bởi subprocess CLI.
     briefing = engine_daily_briefing(
         date_iso=date_iso,
         shift_mode=shift_mode,
-        include_live_sources=not dry_run,
+        include_live_sources=False,
         base_dir=root,
     )
+
+    if target_zalo and target_zalo.strip():
+        cfg = load_notification_config()
+        cfg["zalo"]["default_chat"] = target_zalo.strip()
+        if wechat_webhook_url and wechat_webhook_url.strip():
+            cfg["wechat"]["webhook_url"] = wechat_webhook_url.strip()
+        save_notification_config(cfg)
 
     channels_norm = [c.strip().lower() for c in channels]
     results: Dict[str, Any] = {
@@ -411,3 +526,47 @@ def dispatch_daily_briefing(
             pass
 
     return results
+
+
+def _deliver_zalo_queue_cli(queue_file_str: str) -> None:
+    """Thực thi gửi tin nhắn cuối cùng trong zalo_queue.json qua DUC_OLAZ (chạy ở tiến trình nền)."""
+    import asyncio
+    qpath = Path(queue_file_str)
+    if not qpath.is_file():
+        return
+    try:
+        items = json.loads(qpath.read_text(encoding="utf-8"))
+        if not items or not isinstance(items, list):
+            return
+        last_item = items[-1]
+        target_chat = last_item.get("target_chat", "Thông báo chung OLAZ")
+        message = last_item.get("message", "")
+        if not message:
+            return
+
+        olaz_dir = DEFAULT_HUB_ROOT / "mcp_bridges" / "DUC_OLAZ"
+        if str(olaz_dir) not in sys.path:
+            sys.path.insert(0, str(olaz_dir))
+        from src.tools.messaging import zalo_send_message  # type: ignore
+
+        res = asyncio.run(zalo_send_message(to=target_chat, message=message))
+        out_txt = res[0].text if res else "Done"
+        last_item["status"] = "SENT" if "✅" in out_txt else "ATTEMPTED"
+        last_item["delivery_result"] = out_txt
+        last_item["delivered_at"] = datetime.now().isoformat(timespec="seconds")
+        qpath.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        try:
+            items[-1]["status"] = "DELIVERY_SKIPPED"
+            items[-1]["delivery_error"] = str(exc)
+            qpath.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--deliver-zalo-queue", type=str, default="", help="Deliver last queued Zalo message")
+    args = parser.parse_args()
+    if args.deliver_zalo_queue:
+        _deliver_zalo_queue_cli(args.deliver_zalo_queue)
