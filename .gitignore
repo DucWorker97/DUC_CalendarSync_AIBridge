@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pytest_tmp/
+.venv/
+venv/
+.env
+*token*.json
+*credentials*.json
+auth.json
+exports/*.ics
+exports/custom_events.json
+*.log
+.DS_Store
