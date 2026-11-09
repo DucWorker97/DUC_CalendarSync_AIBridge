@@ -6,7 +6,7 @@ Tập tin này định nghĩa bối cảnh, kiến trúc, quy tắc phát triể
 
 ## 1. Tổng Quan Dự Án & Kiến Trúc Cốt Lõi
 
-- **Tên dự án:** `DUC_CalendarSync_AIBridge` (`v1.2.0`)
+- **Tên dự án:** `DUC_CalendarSync_AIBridge` (`v1.3.0`)
 - **Tài khoản GitHub chính thức:** `DucWorker97` (`https://github.com/DucWorker97/DUC_CalendarSync_AIBridge.git`)
 - **Mục tiêu:** MCP Server (`stdio` JSON-RPC 2.0) chuyên trách **Đồng bộ Lịch biểu Tự động Đa Nền tảng 2 Chiều**, **Tự động Nhắc Lịch Sự cố Chờ Bù Đơn ITSM (`Bxx`)** và **Sinh Bản tin Đầu ca / Cuối ca**.
 - **3 Nền tảng Lịch tích hợp:**
@@ -85,4 +85,6 @@ DUC_CalendarSync_AIBridge/
 | 09/11/2026 | Antigravity (Session 3 — Sync & v1.2.0) | Tiếp quản trên máy chính (`D:\DucWorker\DUC_SmartOps_AIHub\mcp_bridges\DUC_CalendarSync_AIBridge`): Hợp nhất cấu hình `pytest.ini`, tương thích kép `MCPServer`/`FastMCP`, fallback `gcalendar` CLI & Outlook COM; đăng ký `DUC_CalendarSync_AIBridge` vào `mcp_config.json`; đồng bộ thật `cal_sync_all(dry_run=False)` lên Google Calendar & Outlook Desktop; nâng cấp lên **v1.2.0** với 10 MCP Tools (`+cal_delete_event`, `+cal_query_schedule`, `+cal_check_conflicts`, `+cal_update_event`, `+cal_daily_briefing`, `+--register-mcp`) và đạt `7/7` Pytest PASS. |
 | 09/11/2026 | Antigravity (Session 4 — Portfolio & CI) | Chuẩn hóa Portfolio GitHub `DucWorker97`: Thiết lập GitHub Actions CI Matrix đa nền tảng (`.github/workflows/ci.yml` — Windows & Ubuntu, Python 3.10, 3.11, 3.12); bổ sung giấy phép mã nguồn mở `LICENSE` (MIT); tái cấu trúc và nâng cấp `README.md` chuẩn Showcase với bộ huy hiệu động, sơ đồ kiến trúc Mermaid chi tiết, bảng đặc tả 10 MCP Tools và tài liệu tích hợp đa Client. |
 | 09/11/2026 | Antigravity (Session 5 — Hub Interconnection) | Liên thông toàn diện **DUC_CalendarSync_AIBridge v1.2.0** với hệ sinh thái `DUC_SmartOps_AIHub`: Đăng ký MCP Server vào `mcp_config_hub.json` (13 servers); nâng cấp `app_engine/calendar_sync/calendar_service.py` ủy quyền gọi trực tiếp `calendar_engine` v1.2.0; mở rộng 6 REST API endpoints mới trong `app_engine/web_ui/routes_api.py`; tích hợp Tab 6 `📅 Đồng Bộ Lịch & ITSM` trên Control Center Web UI (`templates/index.html`); mở rộng CLI `--briefing` và `--remind-itsm`; xác minh 18/18 Web UI tests PASS và 7/7 Bridge tests PASS. |
+| 09/11/2026 | Antigravity (Session 6 — Scheduled Automations & v1.3.0) | Triển khai Hướng 4 — Lịch Quét & Vận Hành Tự Động Hàng Ngày: Xây dựng module `src/scheduler_runner.py` (v1.3.0) xử lý ca sáng (08:00) và ca chiều (17:15) kèm xuất Markdown và ghi nhật ký audit; thiết lập kịch bản tự động hóa cấp OS qua Windows Task Scheduler (`schtasks` với `pythonw.exe` hoàn toàn không hiện popup CMD); bổ sung bộ scripts quản trị `scripts/` (PowerShell & 1-Click Batches); tạo 2 Antigravity Scheduled Automations Sidecars (`smartops-morning-briefing` và `smartops-evening-briefing`); mở rộng Web UI Tab 6 quản trị lịch trình Windows Task Scheduler; nâng tổng số bài kiểm thử lên 9/9 Bridge tests PASS (100%) và 19/19 Hub Web UI tests PASS (100%). |
+
 

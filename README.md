@@ -1,13 +1,13 @@
 # 📅 DUC_CalendarSync_AIBridge
 
 > **Multi-Platform Calendar Sync & ITSM Smart Reminder MCP Server**  
-> *Hệ thống Cầu nối MCP Điều phối Lịch biểu Tự động Đa Nền tảng 2 Chiều & Nhắc Lịch Sự cố ITSM Thông minh*
+> *Hệ thống Cầu nối MCP Điều phối Lịch biểu Tự động Đa Nền tảng 2 Chiều & Nhắc Lịch Sự cố ITSM Thông minh (v1.3.0)*
 
 [![CI - Build & Test](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![Protocol](https://img.shields.io/badge/MCP-stdio%20JSON--RPC%202.0-orange.svg)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/Pytest-7%2F7%20PASS-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Pytest-9%2F9%20PASS-brightgreen.svg)](tests/)
 [![Platforms](https://img.shields.io/badge/Platforms-Google%20Calendar%20%7C%20Outlook%20Desktop%20%7C%20RFC%205545-purple.svg)](#)
 [![Author](https://img.shields.io/badge/Author-DucWorker97-green.svg)](https://github.com/DucWorker97)
 
@@ -191,6 +191,44 @@ Thêm đoạn cấu hình sau vào tệp `mcp_config.json` (hoặc `claude_deskt
 
 ---
 
+## ⏰ Lịch Quét & Vận Hành Tự Động Hàng Ngày (Automations & Task Scheduler)
+
+`DUC_CalendarSync_AIBridge v1.3.0` hỗ trợ cơ chế tự động hóa kép (Dual Automation Architecture) đảm bảo hệ thống tự kích hoạt đúng giờ kể cả khi không mở terminal:
+
+### 1. Windows Task Scheduler (Cấp Hệ Điều Hành — Không Hiện Cửa Sổ CMD)
+Sử dụng `pythonw.exe` để chạy ngầm 100% không làm gián đoạn người dùng:
+- **Ca Sáng (08:00 Thứ 2 – Thứ 7):** `DUC_SmartOps\Morning_Briefing_0800` — Tự động đọc lịch trình và xuất bản tin Markdown lưu vào `exports/briefings/` và Hub `logs/daily_briefings/`.
+- **Ca Chiều (17:15 Thứ 2 – Thứ 7):** `DUC_SmartOps\Evening_Briefing_ITSM_1715` — Tự động quét sổ cái `THEO-DOI-BU-TICKET-ITSM.md`, ghim lịch nhắc bù đơn Bxx, đồng bộ lịch và nhắc nhở mốc 17:45 Sao lưu Kho Nóng (Quy tắc 12).
+
+**Lệnh Thao Tác Nhanh:**
+```bash
+# Đăng ký tự động 2 tác vụ vào Windows Task Scheduler
+python server.py --register-tasks
+# hoặc:
+python -m src.scheduler_runner --register-tasks
+
+# Kiểm tra trạng thái tác vụ
+python server.py --status-tasks
+
+# Hủy đăng ký tác vụ
+python server.py --unregister-tasks
+
+# Chạy thử nghiệm trực tiếp
+python -m src.scheduler_runner --mode MORNING --dry-run
+python -m src.scheduler_runner --mode EVENING --dry-run
+```
+*Giao diện 1-Click:* Có sẵn các tệp kịch bản tại thư mục `scripts/`:
+- `scripts/Register_Task_Scheduler.bat` (1-Click đăng ký Windows Task Scheduler)
+- `scripts/Unregister_Task_Scheduler.bat` (1-Click hủy đăng ký)
+- `scripts/Run_Morning_Briefing.bat` & `scripts/Run_Evening_Briefing.bat`
+
+### 2. Antigravity Scheduled Automations (Sidecars `builtin: schedule`)
+Cấu hình tích hợp sẵn tại `~/.gemini/config/sidecars/`:
+- `smartops-morning-briefing`: Chạy `CRON_TZ=Asia/Ho_Chi_Minh 0 8 * * 1-6` qua Antigravity Agent API.
+- `smartops-evening-briefing`: Chạy `CRON_TZ=Asia/Ho_Chi_Minh 15 17 * * 1-6` tự động quét ITSM và tổng kết ca chiều.
+
+---
+
 ## 📁 Cấu Trúc Thư Mục Dự Án (Project Structure)
 
 ```text
@@ -198,18 +236,27 @@ DUC_CalendarSync_AIBridge/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml                   # GitHub Actions CI matrix (Windows & Ubuntu, Python 3.10 - 3.12)
-├── server.py                        # MCP Server Entrypoint (10 Tools + --selftest + --register-mcp)
+├── server.py                        # MCP Server Entrypoint (10 Tools + --selftest + --register-tasks)
 ├── src/
 │   ├── __init__.py
 │   ├── models.py                    # SmartOpsCalendarEvent + 3 Chuỗi Lịch Vận Hành Chuẩn
 │   ├── calendar_engine.py           # Bộ Điều Phối Trung Tâm (10 Nghiệp Vụ Cốt Lõi)
+│   ├── scheduler_runner.py          # Trình Thực Thi Lịch Quét & Vận Hành Tự Động Hàng Ngày (v1.3.0)
 │   ├── gcalendar_adapter.py         # Cầu Nối Google Calendar (OAuth CLI + Web Deep-Link)
 │   ├── outlook_adapter.py           # Cầu Nối Microsoft Outlook Desktop (MAPI COM)
 │   ├── ics_exporter.py              # Bộ Xuất Chuẩn RFC 5545 (.ics) + Mã Băm MD5
 │   └── itsm_reminder_watcher.py     # Bộ Quét Sổ Cái ITSM & Lập Lịch Nhắc Bù Đơn
+├── scripts/
+│   ├── register_windows_tasks.ps1   # PowerShell đăng ký Windows Task Scheduler
+│   ├── unregister_windows_tasks.ps1 # PowerShell hủy đăng ký
+│   ├── Register_Task_Scheduler.bat  # 1-Click Đăng ký Task Scheduler
+│   ├── Unregister_Task_Scheduler.bat# 1-Click Hủy đăng ký
+│   ├── Run_Morning_Briefing.bat     # 1-Click Chạy Bản tin Đầu ca Sáng
+│   ├── Run_Evening_Briefing.bat     # 1-Click Chạy Bản tin Cuối ca Chiều
+│   └── Check_Task_Status.bat        # 1-Click Kiểm tra trạng thái
 ├── tests/
-│   └── test_calendar_mcp.py         # Bộ Kiểm Thử Tự Động Pytest (7/7 PASS)
-├── exports/                         # Thư Mục Artifacts (.ics & custom_events.json)
+│   └── test_calendar_mcp.py         # Bộ Kiểm Thử Tự Động Pytest (9/9 PASS)
+├── exports/                         # Thư Mục Artifacts (.ics, custom_events.json, briefings/)
 ├── AGENTS.md                        # Workspace Rules & Lịch Sử AI Sessions
 ├── HANDOFF-MACHINE-TRANSFER.md      # Tài Liệu Bàn Giao Chuyển Giao Máy & Tiếp Quản
 ├── Push_To_GitHub_DucWorker97.bat   # Script Đẩy Git Tự Động (Tài khoản DucWorker97)

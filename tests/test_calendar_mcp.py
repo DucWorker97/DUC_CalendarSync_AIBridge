@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-test_calendar_mcp.py — Bộ Kiểm Thử Tự Động cho DUC_CalendarSync_AIBridge (v1.2.0)
+test_calendar_mcp.py — Bộ Kiểm Thử Tự Động cho DUC_CalendarSync_AIBridge (v1.3.0)
 ========================================================================
 Kiểm định:
 1. Sinh 3 lịch biểu vận hành tự động & xuất tệp chuẩn quốc tế RFC 5545 (.ics).
@@ -9,7 +9,8 @@ Kiểm định:
 4. Quản lý vòng đời sự kiện (tạo, cập nhật/dời lịch & xóa sự kiện tùy chỉnh, bảo vệ sự kiện hệ thống).
 5. Truy vấn lịch trình 2 chiều (engine_query_schedule) & phát hiện xung đột (engine_check_conflicts).
 6. Sinh Bản tin Đầu ca / Cuối ca (engine_daily_briefing) ở cả 2 chế độ MORNING & EVENING.
-7. Kiểm thử 10 MCP Tools, đăng ký mcp_config.json và chế độ `--selftest` của `server.py`.
+7. Kiểm thử Trình thực thi Lịch quét tự động hàng ngày (scheduler_runner.py) & Windows Task Scheduler.
+8. Kiểm thử 10 MCP Tools, đăng ký mcp_config.json và chế độ `--selftest` của `server.py`.
 ========================================================================
 """
 
@@ -34,6 +35,13 @@ from src.calendar_engine import (
     engine_update_event,
 )
 from src.itsm_reminder_watcher import scan_pending_itsm_candidates
+from src.scheduler_runner import (
+    execute_auto_routine,
+    execute_evening_routine,
+    execute_morning_routine,
+    execute_sync_routine,
+    get_windows_tasks_status,
+)
 from server import register_into_mcp_config, run_selftest
 
 
@@ -222,11 +230,66 @@ def test_itsm_all_clear_when_zero_pending(tmp_path: Path):
 def test_mcp_server_selftest_and_register(tmp_path: Path):
     st = run_selftest()
     assert st["selftest"] == "PASS"
-    assert st["version"] == "1.2.0"
+    assert st["version"] == "1.3.0"
     assert st["daily_briefing_ready"] is True
+    assert st["scheduled_tasks_supported"] is True
     assert len(st["tools"]) == 10
 
     dummy_cfg = tmp_path / "mcp_config.json"
     reg = register_into_mcp_config(config_path=dummy_cfg)
     assert reg["status"] == "REGISTERED"
     assert dummy_cfg.is_file()
+
+
+def test_scheduler_runner_routines(tmp_path: Path):
+    # Test Morning Routine
+    res_m = execute_morning_routine(
+        date_iso="2026-11-10T08:00:00",
+        dry_run=True,
+        export_md=True,
+        repo_root=tmp_path,
+        output_dir=tmp_path / "exports" / "briefings",
+    )
+    assert res_m["status"] == "DRY_RUN"
+    assert res_m["mode"] == "MORNING"
+    assert len(res_m["exported_files"]) >= 1
+    m_file = Path(res_m["exported_files"][0])
+    assert m_file.is_file()
+    assert "08:00" in m_file.read_text(encoding="utf-8")
+
+    # Test Evening Routine (with ITSM ledger scan)
+    res_e = execute_evening_routine(
+        date_iso="2026-11-10T17:15:00",
+        auto_remind_itsm=True,
+        dry_run=True,
+        export_md=True,
+        repo_root=tmp_path,
+        output_dir=tmp_path / "exports" / "briefings",
+    )
+    assert res_e["status"] == "DRY_RUN"
+    assert res_e["mode"] == "EVENING"
+    assert len(res_e["exported_files"]) >= 1
+    e_file = Path(res_e["exported_files"][0])
+    assert e_file.is_file()
+    assert "17:15" in e_file.read_text(encoding="utf-8")
+
+    # Test Sync Routine
+    res_s = execute_sync_routine(dry_run=True, repo_root=tmp_path)
+    assert res_s["status"] == "DRY_RUN"
+    assert res_s["mode"] == "SYNC"
+
+    # Test Auto Routine
+    res_a1 = execute_auto_routine(date_iso="2026-11-10T09:30:00", dry_run=True, export_md=False, repo_root=tmp_path)
+    assert res_a1["mode"] == "MORNING"
+    res_a2 = execute_auto_routine(date_iso="2026-11-10T15:30:00", dry_run=True, export_md=False, repo_root=tmp_path)
+    assert res_a2["mode"] == "EVENING"
+
+
+def test_scheduler_windows_tasks_status():
+    st = get_windows_tasks_status()
+    assert st["supported"] is True
+    assert "morning_briefing" in st["tasks"]
+    assert "evening_briefing" in st["tasks"]
+    assert st["tasks"]["morning_briefing"]["schedule"] == "08:00 (Thứ 2 – Thứ 7)"
+    assert st["tasks"]["evening_briefing"]["schedule"] == "17:15 (Thứ 2 – Thứ 7)"
+

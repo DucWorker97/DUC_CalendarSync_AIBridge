@@ -3,7 +3,7 @@
 DUC_CalendarSync_AIBridge — MCP Server (stdio)
 ================================================================================
 Author : Nguyễn Duy Đức (GitHub: DucWorker97)
-Version: 1.2.0
+Version: 1.3.0
 
 Chạy MCP Server:
   python server.py
@@ -11,8 +11,10 @@ Tự kiểm định (Self-Test không mở stdio):
   python server.py --selftest
 Tự động đăng ký vào mcp_config.json:
   python server.py --register-mcp
+Quản lý Windows Task Scheduler:
+  python server.py --register-tasks | --unregister-tasks | --status-tasks
 
-Danh mục 10 MCP Tools (v1.2.0):
+Danh mục 10 MCP Tools (v1.3.0):
 1. cal_status             — Kiểm tra trạng thái Google Calendar OAuth, Outlook Desktop MAPI, kho .ics & sổ cái ITSM.
 2. cal_sync_all           — Đồng bộ tức thì toàn bộ lịch vận hành tự động lên Google Calendar, Outlook Desktop & .ics.
 3. cal_create_event       — Đặt lịch sự kiện tức thì lên Google Calendar, Outlook Desktop & xuất .ics.
@@ -270,12 +272,13 @@ def run_selftest() -> Dict[str, Any]:
     brief = engine_daily_briefing(shift_mode="MORNING", include_live_sources=False)
     return {
         "selftest": "PASS",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "mcp_sdk_ready": MCPServer is not None,
         "status_check": st["status"],
         "sync_dry_run_events": sync_dry["events_count"],
         "itsm_reminder_dry_run": rem_dry["status"],
         "daily_briefing_ready": brief["status"] == "SUCCESS",
+        "scheduled_tasks_supported": st.get("scheduled_tasks", {}).get("supported", False),
         "tools": [
             "cal_status",
             "cal_sync_all",
@@ -299,6 +302,18 @@ if __name__ == "__main__":
         raise SystemExit(0)
     if "--register-mcp" in sys.argv:
         print(_j(register_into_mcp_config()))
+        raise SystemExit(0)
+    if "--register-tasks" in sys.argv:
+        from src.scheduler_runner import register_windows_tasks
+        print(_j(register_windows_tasks()))
+        raise SystemExit(0)
+    if "--unregister-tasks" in sys.argv:
+        from src.scheduler_runner import unregister_windows_tasks
+        print(_j(unregister_windows_tasks()))
+        raise SystemExit(0)
+    if "--status-tasks" in sys.argv:
+        from src.scheduler_runner import get_windows_tasks_status
+        print(_j(get_windows_tasks_status()))
         raise SystemExit(0)
     if MCPServer is None:
         sys.stderr.write(f"MCP SDK import error: {_MCP_IMPORT_ERROR}\n")

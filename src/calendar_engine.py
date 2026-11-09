@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-calendar_engine.py — Bộ Điều Phối Trung Tâm của DUC_CalendarSync_AIBridge (v1.2.0)
+calendar_engine.py — Bộ Điều Phối Trung Tâm của DUC_CalendarSync_AIBridge (v1.3.0)
 =========================================================================
 Cung cấp 10 hàm nghiệp vụ cốt lõi cho MCP Server:
 1. cal_status: Kiểm tra trạng thái Google Calendar OAuth, Outlook Desktop MAPI, kho .ics và sổ cái ITSM.
@@ -126,10 +126,16 @@ def engine_get_status(
 
     ics_files = sorted(ics_dir.glob("*.ics")) if ics_dir.is_dir() else []
 
+    try:
+        from src.scheduler_runner import get_windows_tasks_status
+        tasks_st = get_windows_tasks_status()
+    except Exception:
+        tasks_st = {"supported": False, "registered": False}
+
     return {
         "status": "READY",
         "bridge": "DUC_CalendarSync_AIBridge",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "author": "DucWorker97",
         "checked_at": datetime.now().isoformat(timespec="seconds"),
         "managed_events_count": len(events),
@@ -141,6 +147,7 @@ def engine_get_status(
                 "files_count": len(ics_files),
             },
         },
+        "scheduled_tasks": tasks_st,
         "itsm_pending_summary": {
             "ledger_found": itsm_scan.get("ledger_found", False),
             "total_candidates": itsm_scan.get("total_candidates", 0),
