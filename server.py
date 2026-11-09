@@ -3,7 +3,7 @@
 DUC_CalendarSync_AIBridge — MCP Server (stdio)
 ================================================================================
 Author : Nguyễn Duy Đức (GitHub: DucWorker97)
-Version: 1.1.0
+Version: 1.2.0
 
 Chạy MCP Server:
   python server.py
@@ -12,7 +12,7 @@ Tự kiểm định (Self-Test không mở stdio):
 Tự động đăng ký vào mcp_config.json:
   python server.py --register-mcp
 
-Danh mục 8 MCP Tools (v1.1.0):
+Danh mục 10 MCP Tools (v1.2.0):
 1. cal_status             — Kiểm tra trạng thái Google Calendar OAuth, Outlook Desktop MAPI, kho .ics & sổ cái ITSM.
 2. cal_sync_all           — Đồng bộ tức thì toàn bộ lịch vận hành tự động lên Google Calendar, Outlook Desktop & .ics.
 3. cal_create_event       — Đặt lịch sự kiện tức thì lên Google Calendar, Outlook Desktop & xuất .ics.
@@ -21,6 +21,8 @@ Danh mục 8 MCP Tools (v1.1.0):
 6. cal_delete_event       — Xóa sự kiện tùy chỉnh theo event_id đồng bộ trên cả 3 nền tảng.
 7. cal_query_schedule     — Đọc lịch trình thực tế 2 chiều trong ngày/tuần từ Managed Store, Google Calendar & Outlook.
 8. cal_check_conflicts    — Kiểm tra xung đột lịch họp & gợi ý 3 khung giờ trống gần nhất (Free-Busy Finder).
+9. cal_update_event       — Dời lịch (reschedule) hoặc cập nhật nội dung sự kiện tùy chỉnh theo event_id.
+10. cal_daily_briefing    — Sinh Bản tin Lịch trình Đầu ca (08:00) / Cuối ca (17:15) kèm trạng thái ITSM & Sao lưu.
 ================================================================================
 """
 
@@ -37,12 +39,14 @@ if _HERE not in sys.path:
 from src.calendar_engine import (  # noqa: E402
     engine_check_conflicts,
     engine_create_event,
+    engine_daily_briefing,
     engine_delete_event,
     engine_get_status,
     engine_list_events,
     engine_query_schedule,
     engine_remind_pending_itsm,
     engine_sync_all,
+    engine_update_event,
 )
 
 try:
@@ -173,6 +177,48 @@ if MCPServer is not None:
             )
         )
 
+    @mcp.tool()
+    def cal_update_event(
+        event_id: str,
+        new_title: str = "",
+        new_start_iso: str = "",
+        new_duration_minutes: int = 0,
+        new_description: str = "",
+        new_location: str = "",
+        new_recurrence_type: str = "",
+        new_reminder_minutes: int = -1,
+        dry_run: bool = False,
+    ) -> str:
+        """Dời lịch (reschedule) hoặc cập nhật tiêu đề, thời lượng, mô tả, địa điểm của sự kiện tùy chỉnh theo `event_id` đồng bộ trên cả 3 nền tảng."""
+        return _j(
+            engine_update_event(
+                event_id=event_id,
+                new_title=new_title,
+                new_start_iso=new_start_iso,
+                new_duration_minutes=int(new_duration_minutes),
+                new_description=new_description,
+                new_location=new_location,
+                new_recurrence_type=new_recurrence_type,
+                new_reminder_minutes=int(new_reminder_minutes),
+                dry_run=bool(dry_run),
+            )
+        )
+
+    @mcp.tool()
+    def cal_daily_briefing(
+        date_iso: str = "",
+        shift_mode: str = "AUTO",
+        include_live_sources: bool = False,
+    ) -> str:
+        """Sinh Bản tin Lịch trình Đầu ca (`MORNING` - 08:00) hoặc Cuối ca (`EVENING` - 17:15) kèm danh sách sự kiện trong ngày, trạng thái bù đơn ITSM và Checklist hành động."""
+        return _j(
+            engine_daily_briefing(
+                date_iso=date_iso,
+                shift_mode=shift_mode,
+                include_live_sources=bool(include_live_sources),
+            )
+        )
+
 
 def register_into_mcp_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     target = config_path or (Path.home() / ".gemini" / "antigravity" / "mcp_config.json")
@@ -221,13 +267,15 @@ def run_selftest() -> Dict[str, Any]:
         ],
         dry_run=True,
     )
+    brief = engine_daily_briefing(shift_mode="MORNING", include_live_sources=False)
     return {
         "selftest": "PASS",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "mcp_sdk_ready": MCPServer is not None,
         "status_check": st["status"],
         "sync_dry_run_events": sync_dry["events_count"],
         "itsm_reminder_dry_run": rem_dry["status"],
+        "daily_briefing_ready": brief["status"] == "SUCCESS",
         "tools": [
             "cal_status",
             "cal_sync_all",
@@ -237,6 +285,8 @@ def run_selftest() -> Dict[str, Any]:
             "cal_delete_event",
             "cal_query_schedule",
             "cal_check_conflicts",
+            "cal_update_event",
+            "cal_daily_briefing",
         ],
     }
 

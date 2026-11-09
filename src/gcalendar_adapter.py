@@ -287,6 +287,22 @@ def delete_event_from_gcalendar(
         }
 
 
+def update_event_on_gcalendar(
+    ev: SmartOpsCalendarEvent,
+    ics_dir: Optional[Path] = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    if dry_run:
+        return {
+            "status": "DRY_RUN",
+            "event_id": ev.event_id,
+            "action": "WOULD_UPDATE_GCAL",
+            "google_web_url": build_google_calendar_url(ev),
+        }
+    delete_event_from_gcalendar(ev, dry_run=False)
+    return sync_events_to_gcalendar([ev], ics_dir=ics_dir, dry_run=False)
+
+
 def fetch_gcalendar_events_in_range(
     start_iso: str,
     end_iso: str,

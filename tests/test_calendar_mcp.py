@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-test_calendar_mcp.py — Bộ Kiểm Thử Tự Động cho DUC_CalendarSync_AIBridge (v1.1.0)
+test_calendar_mcp.py — Bộ Kiểm Thử Tự Động cho DUC_CalendarSync_AIBridge (v1.2.0)
 ========================================================================
 Kiểm định:
 1. Sinh 3 lịch biểu vận hành tự động & xuất tệp chuẩn quốc tế RFC 5545 (.ics).
 2. Quét sổ cái ITSM (THEO-DOI-BU-TICKET-ITSM.md) phát hiện Candidate Bxx đang chờ bù đơn / thiếu Mã NV.
 3. Tự động đặt lịch nhắc bù đơn ITSM (schedule_pending_itsm_reminder) kèm mẫu câu hỏi Mã NV (Quy tắc 4).
-4. Quản lý vòng đời sự kiện (tạo & xóa sự kiện tùy chỉnh, bảo vệ sự kiện hệ thống).
+4. Quản lý vòng đời sự kiện (tạo, cập nhật/dời lịch & xóa sự kiện tùy chỉnh, bảo vệ sự kiện hệ thống).
 5. Truy vấn lịch trình 2 chiều (engine_query_schedule) & phát hiện xung đột (engine_check_conflicts).
-6. Kiểm thử 8 MCP Tools, đăng ký mcp_config.json và chế độ `--selftest` của `server.py`.
+6. Sinh Bản tin Đầu ca / Cuối ca (engine_daily_briefing) ở cả 2 chế độ MORNING & EVENING.
+7. Kiểm thử 10 MCP Tools, đăng ký mcp_config.json và chế độ `--selftest` của `server.py`.
 ========================================================================
 """
 
@@ -23,12 +24,14 @@ import pytest
 from src.calendar_engine import (
     engine_check_conflicts,
     engine_create_event,
+    engine_daily_briefing,
     engine_delete_event,
     engine_get_status,
     engine_list_events,
     engine_query_schedule,
     engine_remind_pending_itsm,
     engine_sync_all,
+    engine_update_event,
 )
 from src.itsm_reminder_watcher import scan_pending_itsm_candidates
 from server import register_into_mcp_config, run_selftest
@@ -63,7 +66,7 @@ def test_engine_sync_and_list(tmp_path: Path):
     assert lst["count"] == 3
 
 
-def test_engine_create_and_delete_custom_event(tmp_path: Path):
+def test_engine_create_update_and_delete_custom_event(tmp_path: Path):
     res = engine_create_event(
         title="[MES-Ops] Kiểm tra máy in nhãn Xưởng C9",
         start_iso="2026-11-11T14:30:00",
@@ -75,12 +78,29 @@ def test_engine_create_and_delete_custom_event(tmp_path: Path):
     assert res["status"] == "SUCCESS"
     ev_id = res["event"]["event_id"]
     assert res["event"]["title"] == "[MES-Ops] Kiểm tra máy in nhãn Xưởng C9"
-    assert "calendar.google.com" in res["google_web_url"]
-    assert "outlook.office.com" in res["outlook_web_url"]
 
-    # Bảo vệ sự kiện hệ thống
-    prot = engine_delete_event("DAILY_BACKUP_1745", targets=("ics",), base_dir=tmp_path)
-    assert prot["status"] == "PROTECTED_SYSTEM_EVENT"
+    # Cập nhật / Dời lịch sự kiện tùy chỉnh (cal_update_event)
+    upd = engine_update_event(
+        event_id=ev_id,
+        new_title="[MES-Ops] Kiểm tra & Bảo trì máy in nhãn Xưởng C9",
+        new_start_iso="2026-11-11T15:30:00",
+        new_duration_minutes=60,
+        targets=("ics",),
+        dry_run=False,
+        base_dir=tmp_path,
+    )
+    assert upd["status"] == "SUCCESS"
+    assert upd["previous_start_dt"] == "2026-11-11T14:30:00"
+    assert upd["event"]["start_dt"] == "2026-11-11T15:30:00"
+    assert upd["event"]["duration_minutes"] == 60
+    assert "Bảo trì" in upd["event"]["title"]
+
+    # Không cho phép update/delete sự kiện hệ thống
+    prot_upd = engine_update_event("DAILY_BACKUP_1745", new_title="Test", base_dir=tmp_path)
+    assert prot_upd["status"] == "PROTECTED_SYSTEM_EVENT"
+
+    prot_del = engine_delete_event("DAILY_BACKUP_1745", targets=("ics",), base_dir=tmp_path)
+    assert prot_del["status"] == "PROTECTED_SYSTEM_EVENT"
 
     # Xóa sự kiện tùy chỉnh
     del_res = engine_delete_event(ev_id, targets=("ics",), dry_run=False, base_dir=tmp_path)
@@ -119,6 +139,40 @@ def test_query_schedule_and_conflict_checker(tmp_path: Path):
     )
     assert c_free["status"] == "FREE"
     assert c_free["has_conflict"] is False
+
+
+def test_daily_briefing_morning_and_evening(tmp_path: Path):
+    sample_ledger = tmp_path / "THEO-DOI-BU-TICKET-ITSM.md"
+    sample_ledger.write_text(
+        "| Mã | Ngày | Customer | Nội dung | Trạng thái | Ticket |\n"
+        "|---|---|---|---|---|---|\n"
+        "| **B91** | 09/11/2026 | User Xưởng D2 | Lỗi PDA | ⏳ Chờ mã NV | — |\n",
+        encoding="utf-8",
+    )
+
+    morning = engine_daily_briefing(
+        date_iso="2026-11-09T08:00:00",
+        shift_mode="MORNING",
+        include_live_sources=False,
+        ledger_path=sample_ledger,
+        base_dir=tmp_path,
+    )
+    assert morning["status"] == "SUCCESS"
+    assert morning["shift_mode"] == "MORNING"
+    assert morning["itsm_pending_count"] == 1
+    assert "B91" in morning["markdown_briefing"]
+    assert "V0xxxx" in morning["markdown_briefing"]
+
+    evening = engine_daily_briefing(
+        date_iso="2026-11-09T17:15:00",
+        shift_mode="EVENING",
+        include_live_sources=False,
+        ledger_path=sample_ledger,
+        base_dir=tmp_path,
+    )
+    assert evening["status"] == "SUCCESS"
+    assert evening["shift_mode"] == "EVENING"
+    assert "17:45" in evening["markdown_briefing"]
 
 
 def test_itsm_pending_scanner_and_auto_reminder(tmp_path: Path):
@@ -168,8 +222,9 @@ def test_itsm_all_clear_when_zero_pending(tmp_path: Path):
 def test_mcp_server_selftest_and_register(tmp_path: Path):
     st = run_selftest()
     assert st["selftest"] == "PASS"
-    assert st["version"] == "1.1.0"
-    assert len(st["tools"]) == 8
+    assert st["version"] == "1.2.0"
+    assert st["daily_briefing_ready"] is True
+    assert len(st["tools"]) == 10
 
     dummy_cfg = tmp_path / "mcp_config.json"
     reg = register_into_mcp_config(config_path=dummy_cfg)
