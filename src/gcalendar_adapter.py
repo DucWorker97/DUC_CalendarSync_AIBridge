@@ -19,8 +19,8 @@ from src.ics_exporter import build_google_calendar_url
 
 
 def locate_gcalendar_cli() -> Optional[str]:
-    """Chỉ tìm kiếm file thực thi nhị phân (.exe) thực sự đã cài đặt,
-    tránh gọi các wrapper .cmd chưa tải binary gây treo subprocess.
+    """Ưu tiên tìm kiếm file thực thi nhị phân (.exe) đã cài đặt,
+    sau đó fallback sang `gcalendar` trong PATH (hỗ trợ sandbox OAuth CLI của Antigravity).
     """
     in_path_exe = shutil.which("gcalendar.exe")
     if in_path_exe and Path(in_path_exe).is_file():
@@ -36,6 +36,17 @@ def locate_gcalendar_cli() -> Optional[str]:
     if local_exe.is_file():
         return str(local_exe)
 
+    in_path = shutil.which("gcalendar")
+    if in_path:
+        return in_path
+
+    candidates = [
+        Path.home() / ".gemini" / "config" / "plugins" / "gcalendar" / "skills" / "gcalendar" / "scripts" / "gcalendar.cmd",
+        Path.home() / ".gemini" / "antigravity" / "plugins" / "gcalendar" / "scripts" / "gcalendar.cmd",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
     return None
 
 

@@ -26,13 +26,16 @@ MASK_SUNDAY = 1
 
 
 def _get_active_outlook() -> Any:
-    """Kết nối non-blocking tới tiến trình Outlook Desktop đang mở qua GetActiveObject,
-    tránh gọi Dispatch mù quáng làm treo tiến trình nền khi Outlook chưa khởi động.
+    """Ưu tiên kết nối non-blocking tới tiến trình Outlook Desktop đang mở qua GetActiveObject,
+    và fallback an toàn sang Dispatch khi COM ROT chưa phản hồi.
     """
     import pythoncom
     import win32com.client
     pythoncom.CoInitialize()
-    return win32com.client.GetActiveObject("Outlook.Application")
+    try:
+        return win32com.client.GetActiveObject("Outlook.Application")
+    except Exception:
+        return win32com.client.Dispatch("Outlook.Application")
 
 
 def get_outlook_calendar_status() -> Dict[str, Any]:
