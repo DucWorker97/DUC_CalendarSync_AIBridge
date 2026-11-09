@@ -15,6 +15,7 @@
 | **Branch hiện tại** | `main` |
 | **Commit bàn giao (HEAD)** | `chore(handoff): prepare repository transfer to new machine` (đồng bộ 100% với `origin/main`) |
 | **Remote `origin`** | `https://github.com/DucWorker97/DUC_CalendarSync_AIBridge.git` |
+| **Quyền truy cập Collaborator** | Đã cấp quyền **`write` (`push`)** cho tài khoản **`DucWorker19`** (Invitation ID: `342344645` — https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/invitations) |
 | **Trạng thái Working Tree** | Clean (`0` file modified/untracked; các tệp sinh động `exports/*.ics`, `.pytest_tmp/`, `__pycache__/` đã được ignore chuẩn xác) |
 
 ---
