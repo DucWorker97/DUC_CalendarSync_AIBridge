@@ -39,6 +39,10 @@ from src.calendar_engine import (
     engine_remind_pending_itsm,
     engine_sync_all,
 )
+from src.notification_dispatcher import (
+    dispatch_daily_briefing,
+    load_notification_config,
+)
 
 TASK_NAME_MORNING = r"DUC_SmartOps\Morning_Briefing_0800"
 TASK_NAME_EVENING = r"DUC_SmartOps\Evening_Briefing_ITSM_1715"
@@ -108,8 +112,10 @@ def execute_morning_routine(
     export_md: bool = True,
     repo_root: Optional[Path] = None,
     output_dir: Optional[Path] = None,
+    dispatch_channels: Optional[Sequence[str]] = None,
+    dispatch_dry_run: bool = True,
 ) -> Dict[str, Any]:
-    """Thực thi Bản tin Đầu ca Sáng (08:00)."""
+    """Thực thi Bản tin Đầu ca Sáng (08:00) kèm tùy chọn thông báo đa kênh."""
     now = datetime.fromisoformat(date_iso.strip()) if date_iso.strip() else datetime.now()
     date_tag = now.strftime("%Y%m%d")
 
@@ -138,6 +144,16 @@ def execute_morning_routine(
             hub_path.write_text(md_text, encoding="utf-8")
             exported_files.append(str(hub_path))
 
+    dispatch_res: Dict[str, Any] = {}
+    if dispatch_channels:
+        dispatch_res = dispatch_daily_briefing(
+            date_iso=date_iso,
+            shift_mode="MORNING",
+            channels=dispatch_channels,
+            dry_run=dispatch_dry_run,
+            repo_root=repo_root or _REPO_ROOT,
+        )
+
     result = {
         "status": "DRY_RUN" if dry_run else "SUCCESS",
         "action": "MORNING_BRIEFING",
@@ -148,6 +164,7 @@ def execute_morning_routine(
         "today_events_count": briefing.get("today_events_count", 0),
         "itsm_pending_count": briefing.get("itsm_pending_count", 0),
         "exported_files": exported_files,
+        "dispatch_results": dispatch_res.get("channels", {}),
         "briefing": briefing,
     }
     _log_scheduler_history(result, repo_root=repo_root)
@@ -161,8 +178,10 @@ def execute_evening_routine(
     export_md: bool = True,
     repo_root: Optional[Path] = None,
     output_dir: Optional[Path] = None,
+    dispatch_channels: Optional[Sequence[str]] = None,
+    dispatch_dry_run: bool = True,
 ) -> Dict[str, Any]:
-    """Thực thi Bản tin Cuối ca Chiều (17:15) kèm Quét Bù Đơn ITSM & Đồng Bộ Lịch."""
+    """Thực thi Bản tin Cuối ca Chiều (17:15) kèm Quét Bù Đơn ITSM, Đồng Bộ Lịch & Thông Báo Đa Kênh."""
     now = datetime.fromisoformat(date_iso.strip()) if date_iso.strip() else datetime.now()
     date_tag = now.strftime("%Y%m%d")
 
@@ -203,6 +222,16 @@ def execute_evening_routine(
             hub_path.write_text(md_text, encoding="utf-8")
             exported_files.append(str(hub_path))
 
+    dispatch_res: Dict[str, Any] = {}
+    if dispatch_channels:
+        dispatch_res = dispatch_daily_briefing(
+            date_iso=date_iso,
+            shift_mode="EVENING",
+            channels=dispatch_channels,
+            dry_run=dispatch_dry_run,
+            repo_root=repo_root or _REPO_ROOT,
+        )
+
     result = {
         "status": "DRY_RUN" if dry_run else "SUCCESS",
         "action": "EVENING_BRIEFING_AND_ITSM_CHECK",
@@ -214,6 +243,7 @@ def execute_evening_routine(
         "calendar_sync_result": sync_res.get("status", "SUCCESS"),
         "itsm_pending_count": briefing.get("itsm_pending_count", 0),
         "exported_files": exported_files,
+        "dispatch_results": dispatch_res.get("channels", {}),
         "briefing": briefing,
     }
     _log_scheduler_history(result, repo_root=repo_root)
@@ -446,6 +476,9 @@ def main() -> None:
     parser.add_argument("--register-tasks", action="store_true", help="Đăng ký 2 tác vụ vào Windows Task Scheduler")
     parser.add_argument("--unregister-tasks", action="store_true", help="Hủy đăng ký 2 tác vụ khỏi Windows Task Scheduler")
     parser.add_argument("--status-tasks", action="store_true", help="Kiểm tra trạng thái Windows Task Scheduler")
+    parser.add_argument("--dispatch", action="store_true", help="Bắn bản tin ra các kênh thông báo (WeChat, Zalo)")
+    parser.add_argument("--channels", default="file,wechat,zalo", help="Danh sách kênh phân phối (phân tách bởi dấu phẩy, mặc định: file,wechat,zalo)")
+    parser.add_argument("--confirm-send", action="store_true", help="Xác nhận gửi thật (mặc định là Preview Dry-Run)")
     args = parser.parse_args()
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -471,11 +504,26 @@ def main() -> None:
         return
 
     export_md = not args.no_export
+    dispatch_chs = [c.strip() for c in args.channels.split(",")] if args.dispatch else None
+    dispatch_dry = not args.confirm_send
 
     if args.mode == "MORNING":
-        out = execute_morning_routine(date_iso=args.date, dry_run=args.dry_run, export_md=export_md)
+        out = execute_morning_routine(
+            date_iso=args.date,
+            dry_run=args.dry_run,
+            export_md=export_md,
+            dispatch_channels=dispatch_chs,
+            dispatch_dry_run=dispatch_dry,
+        )
     elif args.mode == "EVENING":
-        out = execute_evening_routine(date_iso=args.date, auto_remind_itsm=True, dry_run=args.dry_run, export_md=export_md)
+        out = execute_evening_routine(
+            date_iso=args.date,
+            auto_remind_itsm=True,
+            dry_run=args.dry_run,
+            export_md=export_md,
+            dispatch_channels=dispatch_chs,
+            dispatch_dry_run=dispatch_dry,
+        )
     elif args.mode == "SYNC":
         out = execute_sync_routine(dry_run=args.dry_run)
     else:  # AUTO

@@ -230,10 +230,11 @@ def test_itsm_all_clear_when_zero_pending(tmp_path: Path):
 def test_mcp_server_selftest_and_register(tmp_path: Path):
     st = run_selftest()
     assert st["selftest"] == "PASS"
-    assert st["version"] == "1.3.0"
+    assert st["version"] == "1.4.0"
     assert st["daily_briefing_ready"] is True
+    assert st["notification_dispatch_ready"] is True
     assert st["scheduled_tasks_supported"] is True
-    assert len(st["tools"]) == 10
+    assert len(st["tools"]) == 11
 
     dummy_cfg = tmp_path / "mcp_config.json"
     reg = register_into_mcp_config(config_path=dummy_cfg)
@@ -292,4 +293,49 @@ def test_scheduler_windows_tasks_status():
     assert "evening_briefing" in st["tasks"]
     assert st["tasks"]["morning_briefing"]["schedule"] == "08:00 (Thứ 2 – Thứ 7)"
     assert st["tasks"]["evening_briefing"]["schedule"] == "17:15 (Thứ 2 – Thứ 7)"
+
+
+def test_notification_dispatcher_formats_and_dryrun(tmp_path: Path):
+    from src.notification_dispatcher import (
+        format_for_wechat_markdown,
+        format_for_zalo_text,
+        dispatch_daily_briefing,
+    )
+    sample_brief = {
+        "shift_label": "🌅 BẢN TIN ĐẦU CA SÁNG (08:00 — MORNING BRIEFING)",
+        "date": "2026-11-10",
+        "today_events": [{"title": "Sao lưu đám mây", "start_dt": "2026-11-10T17:45:00", "source": "smartops_managed"}],
+        "itsm_pending_count": 0,
+        "itsm_pending_candidates": [],
+        "action_checklist": ["Kiểm tra kết nối MES", "Rà soát lịch"],
+    }
+
+    # WeChat format check
+    w_md = format_for_wechat_markdown(sample_brief)
+    assert "### 🌅 BẢN TIN ĐẦU CA SÁNG" in w_md
+    assert '<font color="info">' in w_md
+    assert len(w_md.encode("utf-8")) <= 4000
+
+    # Zalo format check
+    z_txt = format_for_zalo_text(sample_brief)
+    assert "📌 🌅 BẢN TIN ĐẦU CA SÁNG" in z_txt
+    assert "📅 LỊCH TRÌNH TRONG NGÀY:" in z_txt
+    assert "✅ CHECKLIST TRỌNG TÂM THEO CA:" in z_txt
+
+    # Dispatch dry-run check
+    disp = dispatch_daily_briefing(
+        date_iso="2026-11-10T08:00:00",
+        shift_mode="MORNING",
+        channels=("file", "wechat", "zalo"),
+        dry_run=True,
+        target_zalo="Thông báo chung OLAZ",
+        repo_root=tmp_path,
+    )
+    assert disp["status"] == "SUCCESS"
+    assert "wechat" in disp["channels"]
+    assert "zalo" in disp["channels"]
+    assert "file" in disp["channels"]
+    assert disp["channels"]["wechat"]["status"] in {"PREVIEW_READY", "NOT_CONFIGURED"}
+    assert disp["channels"]["zalo"]["status"] == "PREVIEW_READY"
+
 

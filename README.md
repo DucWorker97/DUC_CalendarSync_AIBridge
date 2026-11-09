@@ -1,14 +1,15 @@
 # 📅 DUC_CalendarSync_AIBridge
 
 > **Multi-Platform Calendar Sync & ITSM Smart Reminder MCP Server**  
-> *Hệ thống Cầu nối MCP Điều phối Lịch biểu Tự động Đa Nền tảng 2 Chiều & Nhắc Lịch Sự cố ITSM Thông minh (v1.3.0)*
+> *Hệ thống Cầu nối MCP Điều phối Lịch biểu Tự động Đa Nền tảng 2 Chiều & Nhắc Lịch Sự cố ITSM Thông minh (v1.4.0)*
 
 [![CI - Build & Test](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/DucWorker97/DUC_CalendarSync_AIBridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![Protocol](https://img.shields.io/badge/MCP-stdio%20JSON--RPC%202.0-orange.svg)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/Pytest-9%2F9%20PASS-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Pytest-10%2F10%20PASS-brightgreen.svg)](tests/)
 [![Platforms](https://img.shields.io/badge/Platforms-Google%20Calendar%20%7C%20Outlook%20Desktop%20%7C%20RFC%205545-purple.svg)](#)
+[![Notifications](https://img.shields.io/badge/Notifications-WeChat%20Work%20%7C%20Zalo-brightgreen.svg)](#)
 [![Author](https://img.shields.io/badge/Author-DucWorker97-green.svg)](https://github.com/DucWorker97)
 
 ---
@@ -21,6 +22,7 @@
 2. **Tự Động Nhắc Lịch Bù Đơn ITSM (`Bxx`):** Tự động quét sổ cái sự cố `THEO-DOI-BU-TICKET-ITSM.md` để phát hiện các đơn chưa hoàn tất hoặc thiếu Mã nhân viên (`V0xxxx`), tự động ghim lịch nhắc bù đơn kèm câu mẫu song ngữ VI–ZH (Quy tắc 2 & Quy tắc 4).
 3. **Phát Hiện Xung Đột & Gợi Ý Khung Giờ Trống (Free-Busy Finder):** Kiểm tra trùng lịch họp trước khi đặt sự kiện và tự động đề xuất 3 khung giờ trống khả dụng trong giờ hành chính (`08:00 - 17:30`).
 4. **Bản Tin Lịch Trình Đầu Ca / Cuối Ca:** Sinh báo cáo tóm tắt công việc trong ngày và checklist hành động theo ca (Sáng `08:00` / Chiều `17:15`) định dạng Markdown chuẩn đẹp.
+5. **Thông Báo Tức Thì Đa Kênh (WeChat Work & Zalo):** Tự động định dạng và bắn bản tin ca qua Webhook Bot Doanh nghiệp (企业微信) và Rich-Text Zalo có hỗ trợ hàng đợi an toàn chống xung đột tiến trình.
 
 ---
 
@@ -34,9 +36,9 @@ flowchart TD
         CURSOR["Cursor / Cline"]
     end
 
-    subgraph MCPServer["⚡ DUC_CalendarSync_AIBridge (server.py v1.2.0)"]
+    subgraph MCPServer["⚡ DUC_CalendarSync_AIBridge (server.py v1.4.0)"]
         STDIO["JSON-RPC 2.0 (stdio) Handshake"]
-        TOOLS["10 MCP Tools Registry"]
+        TOOLS["11 MCP Tools Registry"]
         STDIO <--> TOOLS
     end
 
@@ -47,6 +49,7 @@ flowchart TD
         QUERY["cal_query_schedule\ncal_check_conflicts"]
         BRIEF["cal_daily_briefing"]
         REMIND["cal_remind_pending_itsm"]
+        DISPATCH["cal_dispatch_notification"]
     end
 
     subgraph Adapters["🔌 Nền Tảng Tích Hợp (Adapters)"]
@@ -54,13 +57,16 @@ flowchart TD
         OL["Outlook Desktop COM Adapter\n(win32com MAPI - olNonMeeting)"]
         ICS["iCalendar RFC 5545 Exporter\n(Asia/Ho_Chi_Minh + MD5 Checksum)"]
         ITSM["ITSM Reminder Watcher\n(THEO-DOI-BU-TICKET-ITSM.md)"]
+        NOTIF["Notification Dispatcher\n(WeChat Bot Webhook + Zalo Rich-Text)"]
     end
 
-    subgraph Destinations["🎯 Điểm Đến Lịch Biểu Thực Tế"]
+    subgraph Destinations["🎯 Điểm Đến Lịch Biểu & Kênh Bắn Tin"]
         GCLOUD[("Google Calendar Web / App")]
         OUTLOOK_APP[("Microsoft Outlook Desktop Client")]
         ICS_FILES[("Kho lưu trữ .ics & Master Schedule")]
         LEDGER[("Sổ Cái ITSM & BMC Smart IT")]
+        WECHAT_DEST[("WeChat Work Group Bot")]
+        ZALO_DEST[("Zalo Group / Web Automation")]
     end
 
     Clients <-->|"stdio"| MCPServer
@@ -70,11 +76,13 @@ flowchart TD
     OL <--> OUTLOOK_APP
     ICS --> ICS_FILES
     ITSM <--> LEDGER
+    NOTIF --> WECHAT_DEST
+    NOTIF --> ZALO_DEST
 ```
 
 ---
 
-## 🛠️ Danh Mục 10 MCP Tools Hoàn Chỉnh (`v1.2.0`)
+## 🛠️ Danh Mục 11 MCP Tools Hoàn Chỉnh (`v1.4.0`)
 
 | # | Tên MCP Tool | Tham số đầu vào (Parameters) | Mô tả Chức năng | Đặc điểm Kỹ thuật |
 |---|---|---|---|---|
@@ -88,6 +96,7 @@ flowchart TD
 | 8 | **`cal_check_conflicts`** | `start_iso`, `duration_minutes: int = 30`, `include_live_sources: bool = False` | Kiểm tra xung đột lịch họp (Free-Busy Finder) tại khung giờ dự kiến. | Tự động tính toán và đề xuất **3 khung giờ trống gần nhất** trong giờ hành chính (`08:00 - 17:30`). |
 | 9 | **`cal_update_event`** | `event_id`, `new_title`, `new_start_iso`, `new_duration_minutes`, `new_description`, `new_location`, `new_recurrence_type`, `new_reminder_minutes`, `dry_run` | Dời lịch (reschedule) hoặc cập nhật tiêu đề, thời lượng, mô tả của sự kiện theo `event_id`. | Đồng bộ cập nhật trên cả Google Calendar, Outlook Desktop, tệp `.ics` và `custom_events.json`. |
 | 10 | **`cal_daily_briefing`** | `date_iso`, `shift_mode: str = 'AUTO'`, `include_live_sources: bool = False` | Sinh Bản tin Lịch trình Đầu ca (`MORNING` - 08:00) hoặc Cuối ca (`EVENING` - 17:15). | Định dạng Markdown hoàn chỉnh kèm checklist ca làm việc, sẵn sàng đẩy qua WeChat / Zalo. |
+| 11 | **`cal_dispatch_notification`** | `shift_mode: str = 'AUTO'`, `channels: list = None`, `dry_run: bool = True`, `confirm_send: bool = False` | Định dạng và bắn Bản tin Lịch trình tức thì qua các kênh cộng tác (WeChat Work Webhook, Zalo Web Automation). | Hỗ trợ chuẩn Markdown thẻ màu WeChat, Rich-Text Zalo, giới hạn an toàn 4000 bytes, mặc định Dry-Run an toàn. |
 
 ---
 
@@ -141,12 +150,13 @@ python server.py --selftest
 ```json
 {
   "selftest": "PASS",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "mcp_sdk_ready": true,
   "status_check": "READY",
   "sync_dry_run_events": 3,
   "daily_briefing_ready": true,
-  "tools": 10
+  "notification_dispatcher_ready": true,
+  "tools": 11
 }
 ```
 
@@ -159,7 +169,7 @@ python server.py --register-mcp
 ```bash
 python -m pytest tests/ -v
 ```
-*(Hiện tại 7/7 bài kiểm thử đều PASS 100% trên Python 3.10 – 3.14).*
+*(Hiện tại 10/10 bài kiểm thử đều PASS 100% trên Python 3.10 – 3.14).*
 
 ---
 
@@ -191,9 +201,36 @@ Thêm đoạn cấu hình sau vào tệp `mcp_config.json` (hoặc `claude_deskt
 
 ---
 
+## 📲 Tích Hợp Thông Báo Tức Thì Đa Kênh (WeChat Work & Zalo Webhook)
+
+`DUC_CalendarSync_AIBridge v1.4.0` tích hợp module `src/notification_dispatcher.py` cho phép gửi Bản tin Lịch trình Đầu ca (08:00) / Cuối ca (17:15) trực tiếp tới các kênh trao đổi nhóm:
+
+### 1. Kênh WeChat Work Group Bot Webhook (企业微信)
+- **Chuẩn định dạng:** Dedicated Markdown hỗ trợ các thẻ màu chuẩn của WeChat: `<font color="info">`, `<font color="warning">`, `<font color="comment">`.
+- **An toàn giới hạn:** Tự động cắt tỉa đảm bảo dung lượng payload $\le 4096$ bytes theo đúng chuẩn Tencent API.
+- **Cấu hình Webhook:** Nhận qua biến môi trường `WECHAT_WORK_WEBHOOK_URL` hoặc tệp cấu hình JSON / tham số gọi trực tiếp.
+
+### 2. Kênh Zalo Web Automation
+- **Chuẩn định dạng:** Rich-Text phân đoạn rõ ràng bằng emoji, thanh phân cách `════════`, checklist `▪️` và số thứ tự sự kiện.
+- **Cơ chế hàng đợi an toàn:** Tự động đẩy tin nhắn vào `exports/briefings/zalo_queue.json` để công cụ `Zalo-Web-Automation` gửi vào nhóm (ví dụ: `Thông báo chung OLAZ`) mà không gây xung đột khóa tiến trình CDP Singleton.
+
+### 3. Lệnh Thao Tác Nhanh & Tích Hợp Scheduler
+```bash
+# Xem trước nội dung format của cả 2 kênh (Dry-Run an toàn)
+python -m src.scheduler_runner --mode MORNING --dispatch
+
+# Bắn thật sang WeChat Work Webhook
+python -m src.scheduler_runner --mode MORNING --dispatch --channels wechat --confirm-send
+
+# Bắn thật sang cả WeChat và xếp hàng đợi Zalo
+python -m src.scheduler_runner --mode EVENING --dispatch --channels wechat,zalo --confirm-send
+```
+
+---
+
 ## ⏰ Lịch Quét & Vận Hành Tự Động Hàng Ngày (Automations & Task Scheduler)
 
-`DUC_CalendarSync_AIBridge v1.3.0` hỗ trợ cơ chế tự động hóa kép (Dual Automation Architecture) đảm bảo hệ thống tự kích hoạt đúng giờ kể cả khi không mở terminal:
+`DUC_CalendarSync_AIBridge v1.4.0` hỗ trợ cơ chế tự động hóa kép (Dual Automation Architecture) đảm bảo hệ thống tự kích hoạt đúng giờ kể cả khi không mở terminal:
 
 ### 1. Windows Task Scheduler (Cấp Hệ Điều Hành — Không Hiện Cửa Sổ CMD)
 Sử dụng `pythonw.exe` để chạy ngầm 100% không làm gián đoạn người dùng:
@@ -221,6 +258,7 @@ python -m src.scheduler_runner --mode EVENING --dry-run
 - `scripts/Register_Task_Scheduler.bat` (1-Click đăng ký Windows Task Scheduler)
 - `scripts/Unregister_Task_Scheduler.bat` (1-Click hủy đăng ký)
 - `scripts/Run_Morning_Briefing.bat` & `scripts/Run_Evening_Briefing.bat`
+- `scripts/Check_Task_Status.bat`
 
 ### 2. Antigravity Scheduled Automations (Sidecars `builtin: schedule`)
 Cấu hình tích hợp sẵn tại `~/.gemini/config/sidecars/`:
@@ -236,12 +274,13 @@ DUC_CalendarSync_AIBridge/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml                   # GitHub Actions CI matrix (Windows & Ubuntu, Python 3.10 - 3.12)
-├── server.py                        # MCP Server Entrypoint (10 Tools + --selftest + --register-tasks)
+├── server.py                        # MCP Server Entrypoint (11 Tools + --selftest + --register-tasks)
 ├── src/
 │   ├── __init__.py
 │   ├── models.py                    # SmartOpsCalendarEvent + 3 Chuỗi Lịch Vận Hành Chuẩn
 │   ├── calendar_engine.py           # Bộ Điều Phối Trung Tâm (10 Nghiệp Vụ Cốt Lõi)
-│   ├── scheduler_runner.py          # Trình Thực Thi Lịch Quét & Vận Hành Tự Động Hàng Ngày (v1.3.0)
+│   ├── notification_dispatcher.py   # Bộ Điều Phối Thông Báo Đa Kênh WeChat & Zalo (v1.4.0)
+│   ├── scheduler_runner.py          # Trình Thực Thi Lịch Quét & Vận Hành Tự Động Hàng Ngày
 │   ├── gcalendar_adapter.py         # Cầu Nối Google Calendar (OAuth CLI + Web Deep-Link)
 │   ├── outlook_adapter.py           # Cầu Nối Microsoft Outlook Desktop (MAPI COM)
 │   ├── ics_exporter.py              # Bộ Xuất Chuẩn RFC 5545 (.ics) + Mã Băm MD5
@@ -255,7 +294,7 @@ DUC_CalendarSync_AIBridge/
 │   ├── Run_Evening_Briefing.bat     # 1-Click Chạy Bản tin Cuối ca Chiều
 │   └── Check_Task_Status.bat        # 1-Click Kiểm tra trạng thái
 ├── tests/
-│   └── test_calendar_mcp.py         # Bộ Kiểm Thử Tự Động Pytest (9/9 PASS)
+│   └── test_calendar_mcp.py         # Bộ Kiểm Thử Tự Động Pytest (10/10 PASS)
 ├── exports/                         # Thư Mục Artifacts (.ics, custom_events.json, briefings/)
 ├── AGENTS.md                        # Workspace Rules & Lịch Sử AI Sessions
 ├── HANDOFF-MACHINE-TRANSFER.md      # Tài Liệu Bàn Giao Chuyển Giao Máy & Tiếp Quản

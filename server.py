@@ -3,7 +3,7 @@
 DUC_CalendarSync_AIBridge — MCP Server (stdio)
 ================================================================================
 Author : Nguyễn Duy Đức (GitHub: DucWorker97)
-Version: 1.3.0
+Version: 1.4.0
 
 Chạy MCP Server:
   python server.py
@@ -14,17 +14,18 @@ Tự động đăng ký vào mcp_config.json:
 Quản lý Windows Task Scheduler:
   python server.py --register-tasks | --unregister-tasks | --status-tasks
 
-Danh mục 10 MCP Tools (v1.3.0):
-1. cal_status             — Kiểm tra trạng thái Google Calendar OAuth, Outlook Desktop MAPI, kho .ics & sổ cái ITSM.
-2. cal_sync_all           — Đồng bộ tức thì toàn bộ lịch vận hành tự động lên Google Calendar, Outlook Desktop & .ics.
-3. cal_create_event       — Đặt lịch sự kiện tức thì lên Google Calendar, Outlook Desktop & xuất .ics.
-4. cal_remind_pending_itsm— Quét sự cố chờ bù đơn ITSM (Bxx) & tự động ghim lịch nhắc kèm mẫu câu hỏi Mã NV (Quy tắc 4).
-5. cal_list_events        — Liệt kê toàn bộ chuỗi lịch đang quản lý kèm liên kết 1-Click.
-6. cal_delete_event       — Xóa sự kiện tùy chỉnh theo event_id đồng bộ trên cả 3 nền tảng.
-7. cal_query_schedule     — Đọc lịch trình thực tế 2 chiều trong ngày/tuần từ Managed Store, Google Calendar & Outlook.
-8. cal_check_conflicts    — Kiểm tra xung đột lịch họp & gợi ý 3 khung giờ trống gần nhất (Free-Busy Finder).
-9. cal_update_event       — Dời lịch (reschedule) hoặc cập nhật nội dung sự kiện tùy chỉnh theo event_id.
-10. cal_daily_briefing    — Sinh Bản tin Lịch trình Đầu ca (08:00) / Cuối ca (17:15) kèm trạng thái ITSM & Sao lưu.
+Danh mục 11 MCP Tools (v1.4.0):
+1. cal_status              — Kiểm tra trạng thái Google Calendar OAuth, Outlook Desktop MAPI, kho .ics & sổ cái ITSM.
+2. cal_sync_all            — Đồng bộ tức thì toàn bộ lịch vận hành tự động lên Google Calendar, Outlook Desktop & .ics.
+3. cal_create_event        — Đặt lịch sự kiện tức thì lên Google Calendar, Outlook Desktop & xuất .ics.
+4. cal_remind_pending_itsm — Quét sự cố chờ bù đơn ITSM (Bxx) & tự động ghim lịch nhắc kèm mẫu câu hỏi Mã NV (Quy tắc 4).
+5. cal_list_events         — Liệt kê toàn bộ chuỗi lịch đang quản lý kèm liên kết 1-Click.
+6. cal_delete_event        — Xóa sự kiện tùy chỉnh theo event_id đồng bộ trên cả 3 nền tảng.
+7. cal_query_schedule      — Đọc lịch trình thực tế 2 chiều trong ngày/tuần từ Managed Store, Google Calendar & Outlook.
+8. cal_check_conflicts     — Kiểm tra xung đột lịch họp & gợi ý 3 khung giờ trống gần nhất (Free-Busy Finder).
+9. cal_update_event        — Dời lịch (reschedule) hoặc cập nhật nội dung sự kiện tùy chỉnh theo event_id.
+10. cal_daily_briefing     — Sinh Bản tin Lịch trình Đầu ca (08:00) / Cuối ca (17:15) kèm trạng thái ITSM & Sao lưu.
+11. cal_dispatch_notification — Bắn bản tin tức thì đa kênh (WeChat Work Webhook, Zalo Web Automation) an toàn.
 ================================================================================
 """
 
@@ -221,6 +222,34 @@ if MCPServer is not None:
             )
         )
 
+    @mcp.tool()
+    def cal_dispatch_notification(
+        shift_mode: str = "AUTO",
+        channels: str = "wechat,zalo",
+        target_zalo: str = "Thông báo chung OLAZ",
+        wechat_webhook_url: str = "",
+        confirm_send: bool = False,
+    ) -> str:
+        """Bắn bản tin lịch trình ca làm việc và cảnh báo ITSM tức thì ra các kênh thông báo (WeChat Work Webhook, Zalo Web Automation).
+        - shift_mode: 'MORNING' (08:00) | 'EVENING' (17:15) | 'AUTO' (tự động theo giờ)
+        - channels: Danh sách kênh phân phối (phân tách bởi dấu phẩy, VD: 'wechat,zalo' hoặc 'zalo')
+        - target_zalo: Tên người/nhóm nhận trên Zalo (mặc định: 'Thông báo chung OLAZ')
+        - wechat_webhook_url: URL Webhook WeChat Work tùy chỉnh (để trống nếu dùng mặc định)
+        - confirm_send: Mặc định False (chỉ xem trước Dry-Run Preview an toàn). Đặt True để bắn thật.
+        """
+        from src.notification_dispatcher import dispatch_daily_briefing
+        chs = [c.strip() for c in channels.split(",") if c.strip()]
+        return _j(
+            dispatch_daily_briefing(
+                shift_mode=shift_mode,
+                channels=chs,
+                dry_run=not bool(confirm_send),
+                target_zalo=target_zalo,
+                wechat_webhook_url=wechat_webhook_url,
+            )
+        )
+
+
 
 def register_into_mcp_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     target = config_path or (Path.home() / ".gemini" / "antigravity" / "mcp_config.json")
@@ -270,14 +299,17 @@ def run_selftest() -> Dict[str, Any]:
         dry_run=True,
     )
     brief = engine_daily_briefing(shift_mode="MORNING", include_live_sources=False)
+    from src.notification_dispatcher import dispatch_daily_briefing
+    disp_dry = dispatch_daily_briefing(shift_mode="MORNING", channels=["file"], dry_run=True)
     return {
         "selftest": "PASS",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "mcp_sdk_ready": MCPServer is not None,
         "status_check": st["status"],
         "sync_dry_run_events": sync_dry["events_count"],
         "itsm_reminder_dry_run": rem_dry["status"],
         "daily_briefing_ready": brief["status"] == "SUCCESS",
+        "notification_dispatch_ready": disp_dry["status"] == "SUCCESS",
         "scheduled_tasks_supported": st.get("scheduled_tasks", {}).get("supported", False),
         "tools": [
             "cal_status",
@@ -290,6 +322,7 @@ def run_selftest() -> Dict[str, Any]:
             "cal_check_conflicts",
             "cal_update_event",
             "cal_daily_briefing",
+            "cal_dispatch_notification",
         ],
     }
 
