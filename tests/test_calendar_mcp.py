@@ -14,13 +14,19 @@ Kiểm định:
 ========================================================================
 """
 
+import importlib.util
 import shutil
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
 import pytest
+
+_BRIDGE_ROOT = Path(__file__).resolve().parents[1]
+if str(_BRIDGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BRIDGE_ROOT))
 
 from src.calendar_engine import (
     engine_check_conflicts,
@@ -42,7 +48,15 @@ from src.scheduler_runner import (
     execute_sync_routine,
     get_windows_tasks_status,
 )
-from server import register_into_mcp_config, run_selftest
+
+_server_spec = importlib.util.spec_from_file_location(
+    "calendar_sync_server", _BRIDGE_ROOT / "server.py"
+)
+assert _server_spec is not None and _server_spec.loader is not None
+_calendar_server_mod = importlib.util.module_from_spec(_server_spec)
+_server_spec.loader.exec_module(_calendar_server_mod)
+register_into_mcp_config = _calendar_server_mod.register_into_mcp_config
+run_selftest = _calendar_server_mod.run_selftest
 
 
 @pytest.fixture
