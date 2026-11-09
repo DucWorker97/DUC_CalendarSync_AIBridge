@@ -566,7 +566,7 @@ def engine_daily_briefing(
             "Kiểm tra kết nối hệ thống MES / Máy in nhãn tại các xưởng trước giờ cao điểm.",
         ]
     else:
-        shift_label = "🌇 BẢN TIN CUỐI CA CHIỀU (17:15 — EVENING BRIEFING)"
+        shift_label = "🌇 BẢN TIN CUỐI CA CHIỀU (17:30 — EVENING BRIEFING)"
         checklist = [
             (
                 f"Khẩn: Hoàn tất bù {pending_count} đơn ITSM tồn đọng hoặc đặt lịch nhắc sáng mai."

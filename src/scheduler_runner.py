@@ -7,12 +7,12 @@ Chịu trách nhiệm:
    - Đọc lịch trình 2 chiều từ Google Calendar & Outlook Desktop & Kho .ics.
    - Kiểm tra các đơn ITSM cần bù trong ngày và câu hỏi Mã NV (Quy tắc 2 & 4).
    - Xuất tệp Markdown Bản tin lưu vào exports/briefings/ và Hub logs/daily_briefings/.
-2. Bản tin Cuối ca Chiều (EVENING Briefing — 17:15 Thứ 2 – Thứ 7):
+2. Bản tin Cuối ca Chiều (EVENING Briefing — 17:30 Thứ 2 – Thứ 7):
    - Quét sổ cái THEO-DOI-BU-TICKET-ITSM.md: tự động đặt lịch nhắc bù đơn Bxx.
    - Đồng bộ tức thì 3 chuỗi lịch định kỳ và lịch nhắc nhở (cal_sync_all).
    - Xuất Bản tin tổng kết ca chiều và kích hoạt cảnh báo chuẩn bị Sao lưu 17:45 (Quy tắc 12).
 3. Tích hợp Quản lý Windows Task Scheduler:
-   - Tự động đăng ký 2 Tasks (Morning 08:00 & Evening 17:15) vào Windows Task Scheduler.
+   - Tự động đăng ký 2 Tasks (Morning 08:00 & Evening 17:30) vào Windows Task Scheduler.
    - Chạy ngầm hoàn toàn qua pythonw.exe (Windowless, không hiện popup CMD làm gián đoạn người dùng).
 ===================================================================================
 """
@@ -45,7 +45,8 @@ from src.notification_dispatcher import (
 )
 
 TASK_NAME_MORNING = r"DUC_SmartOps\Morning_Briefing_0800"
-TASK_NAME_EVENING = r"DUC_SmartOps\Evening_Briefing_ITSM_1715"
+TASK_NAME_EVENING = r"DUC_SmartOps\Evening_Briefing_ITSM_1730"
+OLD_TASK_NAME_EVENING = r"DUC_SmartOps\Evening_Briefing_ITSM_1715"
 
 DEFAULT_HUB_ROOT = Path(r"D:\DucWorker\DUC_SmartOps_AIHub")
 
@@ -181,7 +182,7 @@ def execute_evening_routine(
     dispatch_channels: Optional[Sequence[str]] = None,
     dispatch_dry_run: bool = True,
 ) -> Dict[str, Any]:
-    """Thực thi Bản tin Cuối ca Chiều (17:15) kèm Quét Bù Đơn ITSM, Đồng Bộ Lịch & Thông Báo Đa Kênh."""
+    """Thực thi Bản tin Cuối ca Chiều (17:30) kèm Quét Bù Đơn ITSM, Đồng Bộ Lịch & Thông Báo Đa Kênh."""
     now = datetime.fromisoformat(date_iso.strip()) if date_iso.strip() else datetime.now()
     date_tag = now.strftime("%Y%m%d")
 
@@ -333,7 +334,7 @@ def get_windows_tasks_status() -> Dict[str, Any]:
             },
             "evening_briefing": {
                 "task_name": TASK_NAME_EVENING,
-                "schedule": "17:15 (Thứ 2 – Thứ 7)",
+                "schedule": "17:30 (Thứ 2 – Thứ 7)",
                 "exists": evening_st.get("exists", False),
                 "next_run_time": evening_st.get("next_run_time", ""),
                 "status": evening_st.get("status", "NOT_FOUND"),
@@ -346,8 +347,9 @@ def register_windows_tasks(python_exe: Optional[str] = None) -> Dict[str, Any]:
     """
     Đăng ký tự động 2 tác vụ vào Windows Task Scheduler:
     1. DUC_SmartOps\\Morning_Briefing_0800 (08:00 Thứ 2 - Thứ 7)
-    2. DUC_SmartOps\\Evening_Briefing_ITSM_1715 (17:15 Thứ 2 - Thứ 7)
+    2. DUC_SmartOps\\Evening_Briefing_ITSM_1730 (17:30 Thứ 2 - Thứ 7)
     Sử dụng pythonw.exe để chạy ngầm hoàn toàn không hiện popup console.
+    Mỗi tác vụ tự động phân phối bản tin Zalo vào nhóm Thông báo chung OLAZ & xuất file Markdown.
     """
     if os.name != "nt":
         return {"status": "ERROR", "message": "Chỉ hỗ trợ trên hệ điều hành Windows."}
@@ -356,8 +358,11 @@ def register_windows_tasks(python_exe: Optional[str] = None) -> Dict[str, Any]:
     pyw = python_exe or exes["pythonw"]
     runner_script = str(Path(__file__).resolve())
 
-    # Task 1: Morning Briefing
-    tr_m = f'"{pyw}" "{runner_script}" --mode MORNING'
+    # Xóa task cũ 17:15 nếu còn tồn tại
+    subprocess.run(["schtasks", "/Delete", "/TN", OLD_TASK_NAME_EVENING, "/F"], capture_output=True, text=True, check=False)
+
+    # Task 1: Morning Briefing (08:00) — Bắn Zalo & File Markdown
+    tr_m = f'"{pyw}" "{runner_script}" --mode MORNING --dispatch --confirm-send --channels file,zalo'
     cmd_m = [
         "schtasks", "/Create",
         "/TN", TASK_NAME_MORNING,
@@ -369,15 +374,15 @@ def register_windows_tasks(python_exe: Optional[str] = None) -> Dict[str, Any]:
     ]
     p_m = subprocess.run(cmd_m, capture_output=True, text=True, check=False)
 
-    # Task 2: Evening Briefing & ITSM
-    tr_e = f'"{pyw}" "{runner_script}" --mode EVENING'
+    # Task 2: Evening Briefing & ITSM (17:30) — Bắn Zalo & File Markdown
+    tr_e = f'"{pyw}" "{runner_script}" --mode EVENING --dispatch --confirm-send --channels file,zalo'
     cmd_e = [
         "schtasks", "/Create",
         "/TN", TASK_NAME_EVENING,
         "/TR", tr_e,
         "/SC", "WEEKLY",
         "/D", "MON,TUE,WED,THU,FRI,SAT",
-        "/ST", "17:15",
+        "/ST", "17:30",
         "/F",
     ]
     p_e = subprocess.run(cmd_e, capture_output=True, text=True, check=False)
@@ -403,7 +408,7 @@ def register_windows_tasks(python_exe: Optional[str] = None) -> Dict[str, Any]:
 
 
 def unregister_windows_tasks() -> Dict[str, Any]:
-    """Hủy đăng ký 2 tác vụ khỏi Windows Task Scheduler."""
+    """Hủy đăng ký các tác vụ khỏi Windows Task Scheduler."""
     if os.name != "nt":
         return {"status": "ERROR", "message": "Chỉ hỗ trợ trên hệ điều hành Windows."}
 
@@ -412,6 +417,9 @@ def unregister_windows_tasks() -> Dict[str, Any]:
 
     cmd_e = ["schtasks", "/Delete", "/TN", TASK_NAME_EVENING, "/F"]
     p_e = subprocess.run(cmd_e, capture_output=True, text=True, check=False)
+
+    # Xóa cả task 17:15 cũ nếu còn sót
+    subprocess.run(["schtasks", "/Delete", "/TN", OLD_TASK_NAME_EVENING, "/F"], capture_output=True, text=True, check=False)
 
     return {
         "status": "SUCCESS",
@@ -422,11 +430,11 @@ def unregister_windows_tasks() -> Dict[str, Any]:
 
 
 def run_daemon_loop(check_interval_seconds: int = 30) -> None:
-    """Vòng lặp giám sát thời gian thực tự động kích hoạt 08:00 và 17:15 không tốn CPU."""
+    """Vòng lặp giám sát thời gian thực tự động kích hoạt 08:00 và 17:30 không tốn CPU."""
     print("=" * 70)
     print("⏰  SmartOps Scheduler Runner — Chế độ Daemon Giám Sát Thời Gian Thực")
     print(f"🔄  Khoảng kiểm tra: {check_interval_seconds}s | Múi giờ: Asia/Ho_Chi_Minh")
-    print("🌅  Ca Sáng: 08:00 Thứ 2 – Thứ 7 | 🌇  Ca Chiều: 17:15 Thứ 2 – Thứ 7")
+    print("🌅  Ca Sáng: 08:00 Thứ 2 – Thứ 7 | 🌇  Ca Chiều: 17:30 Thứ 2 – Thứ 7")
     print("=" * 70)
 
     last_morning_date = ""
@@ -441,14 +449,14 @@ def run_daemon_loop(check_interval_seconds: int = 30) -> None:
             # Kiem tra Ca Sang (08:00 - 08:05)
             if is_workday and now.hour == 8 and now.minute < 5 and last_morning_date != today_str:
                 print(f"[{datetime.now().isoformat()}] 🌅 Kích hoạt Bản tin Đầu ca Sáng...")
-                res_m = execute_morning_routine()
+                res_m = execute_morning_routine(dispatch_channels=["file", "zalo"], dispatch_dry_run=False)
                 last_morning_date = today_str
                 print(f"[{datetime.now().isoformat()}] ✅ Hoàn tất Bản tin Sáng: {res_m.get('status')}")
 
-            # Kiem tra Ca Chieu (17:15 - 17:20)
-            if is_workday and now.hour == 17 and 15 <= now.minute < 20 and last_evening_date != today_str:
+            # Kiem tra Ca Chieu (17:30 - 17:35)
+            if is_workday and now.hour == 17 and 30 <= now.minute < 35 and last_evening_date != today_str:
                 print(f"[{datetime.now().isoformat()}] 🌇 Kích hoạt Bản tin Cuối ca Chiều & Bù đơn ITSM...")
-                res_e = execute_evening_routine(auto_remind_itsm=True)
+                res_e = execute_evening_routine(auto_remind_itsm=True, dispatch_channels=["file", "zalo"], dispatch_dry_run=False)
                 last_evening_date = today_str
                 print(f"[{datetime.now().isoformat()}] ✅ Hoàn tất Bản tin Chiều: {res_e.get('status')}")
 

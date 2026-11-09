@@ -1,0 +1,12 @@
+{
+  "wechat": {
+    "enabled": true,
+    "webhook_url": "",
+    "channel_alias": "default"
+  },
+  "zalo": {
+    "enabled": true,
+    "default_chat": "Thông báo chung OLAZ",
+    "auto_pin_note": false
+  }
+}

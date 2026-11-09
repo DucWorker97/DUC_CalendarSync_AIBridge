@@ -274,7 +274,7 @@ def test_scheduler_runner_routines(tmp_path: Path):
 
     # Test Evening Routine (with ITSM ledger scan)
     res_e = execute_evening_routine(
-        date_iso="2026-11-10T17:15:00",
+        date_iso="2026-11-10T17:30:00",
         auto_remind_itsm=True,
         dry_run=True,
         export_md=True,
@@ -286,7 +286,7 @@ def test_scheduler_runner_routines(tmp_path: Path):
     assert len(res_e["exported_files"]) >= 1
     e_file = Path(res_e["exported_files"][0])
     assert e_file.is_file()
-    assert "17:15" in e_file.read_text(encoding="utf-8")
+    assert "17:30" in e_file.read_text(encoding="utf-8")
 
     # Test Sync Routine
     res_s = execute_sync_routine(dry_run=True, repo_root=tmp_path)
@@ -306,7 +306,7 @@ def test_scheduler_windows_tasks_status():
     assert "morning_briefing" in st["tasks"]
     assert "evening_briefing" in st["tasks"]
     assert st["tasks"]["morning_briefing"]["schedule"] == "08:00 (Thứ 2 – Thứ 7)"
-    assert st["tasks"]["evening_briefing"]["schedule"] == "17:15 (Thứ 2 – Thứ 7)"
+    assert st["tasks"]["evening_briefing"]["schedule"] == "17:30 (Thứ 2 – Thứ 7)"
 
 
 def test_notification_dispatcher_formats_and_dryrun(tmp_path: Path):
