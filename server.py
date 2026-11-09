@@ -3,19 +3,24 @@
 DUC_CalendarSync_AIBridge — MCP Server (stdio)
 ================================================================================
 Author : Nguyễn Duy Đức (GitHub: DucWorker97)
-Version: 1.0.0
+Version: 1.1.0
 
 Chạy MCP Server:
   python server.py
 Tự kiểm định (Self-Test không mở stdio):
   python server.py --selftest
+Tự động đăng ký vào mcp_config.json:
+  python server.py --register-mcp
 
-Danh mục 5 MCP Tools:
+Danh mục 8 MCP Tools (v1.1.0):
 1. cal_status             — Kiểm tra trạng thái Google Calendar OAuth, Outlook Desktop MAPI, kho .ics & sổ cái ITSM.
 2. cal_sync_all           — Đồng bộ tức thì toàn bộ lịch vận hành tự động lên Google Calendar, Outlook Desktop & .ics.
 3. cal_create_event       — Đặt lịch sự kiện tức thì lên Google Calendar, Outlook Desktop & xuất .ics.
 4. cal_remind_pending_itsm— Quét sự cố chờ bù đơn ITSM (Bxx) & tự động ghim lịch nhắc kèm mẫu câu hỏi Mã NV (Quy tắc 4).
 5. cal_list_events        — Liệt kê toàn bộ chuỗi lịch đang quản lý kèm liên kết 1-Click.
+6. cal_delete_event       — Xóa sự kiện tùy chỉnh theo event_id đồng bộ trên cả 3 nền tảng.
+7. cal_query_schedule     — Đọc lịch trình thực tế 2 chiều trong ngày/tuần từ Managed Store, Google Calendar & Outlook.
+8. cal_check_conflicts    — Kiểm tra xung đột lịch họp & gợi ý 3 khung giờ trống gần nhất (Free-Busy Finder).
 ================================================================================
 """
 
@@ -30,9 +35,12 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from src.calendar_engine import (  # noqa: E402
+    engine_check_conflicts,
     engine_create_event,
+    engine_delete_event,
     engine_get_status,
     engine_list_events,
+    engine_query_schedule,
     engine_remind_pending_itsm,
     engine_sync_all,
 )
@@ -130,6 +138,74 @@ if MCPServer is not None:
         """Liệt kê toàn bộ các sự kiện lịch biểu đang quản lý kèm liên kết 1-Click Google Calendar, Outlook Web và đường dẫn tệp .ics."""
         return _j(engine_list_events())
 
+    @mcp.tool()
+    def cal_delete_event(event_id: str, dry_run: bool = False) -> str:
+        """Xóa sự kiện tùy chỉnh theo event_id đồng bộ trên kho .ics, Microsoft Outlook Desktop và Google Calendar."""
+        return _j(engine_delete_event(event_id=event_id, dry_run=bool(dry_run)))
+
+    @mcp.tool()
+    def cal_query_schedule(
+        date_from_iso: str = "",
+        days: int = 7,
+        include_live_sources: bool = True,
+    ) -> str:
+        """Đọc lịch trình thực tế 2 chiều trong khoảng `days` ngày kể từ `date_from_iso` (hợp nhất từ Managed Store, Google Calendar và Outlook Desktop)."""
+        return _j(
+            engine_query_schedule(
+                date_from_iso=date_from_iso,
+                days=int(days),
+                include_live_sources=bool(include_live_sources),
+            )
+        )
+
+    @mcp.tool()
+    def cal_check_conflicts(
+        start_iso: str,
+        duration_minutes: int = 30,
+        include_live_sources: bool = False,
+    ) -> str:
+        """Kiểm tra xung đột lịch họp tại khung giờ `start_iso` (thời lượng `duration_minutes` phút) và gợi ý 3 khung giờ trống gần nhất trong giờ hành chính."""
+        return _j(
+            engine_check_conflicts(
+                start_iso=start_iso,
+                duration_minutes=int(duration_minutes),
+                include_live_sources=bool(include_live_sources),
+            )
+        )
+
+
+def register_into_mcp_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
+    target = config_path or (Path.home() / ".gemini" / "antigravity" / "mcp_config.json")
+    server_script = str(Path(__file__).resolve())
+    repo_dir = str(Path(__file__).resolve().parent)
+    py_exe = sys.executable
+
+    data: Dict[str, Any] = {"mcpServers": {}}
+    if target.is_file():
+        try:
+            data = json.loads(target.read_text(encoding="utf-8"))
+        except Exception:
+            data = {"mcpServers": {}}
+
+    servers = data.setdefault("mcpServers", {})
+    servers["DUC_CalendarSync_AIBridge"] = {
+        "command": py_exe,
+        "args": ["-u", "-X", "utf8", server_script],
+        "env": {
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONPATH": repo_dir,
+        },
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {
+        "status": "REGISTERED",
+        "config_path": str(target),
+        "total_servers": len(servers),
+        "server_name": "DUC_CalendarSync_AIBridge",
+    }
+
 
 def run_selftest() -> Dict[str, Any]:
     st = engine_get_status()
@@ -147,6 +223,7 @@ def run_selftest() -> Dict[str, Any]:
     )
     return {
         "selftest": "PASS",
+        "version": "1.1.0",
         "mcp_sdk_ready": MCPServer is not None,
         "status_check": st["status"],
         "sync_dry_run_events": sync_dry["events_count"],
@@ -157,6 +234,9 @@ def run_selftest() -> Dict[str, Any]:
             "cal_create_event",
             "cal_remind_pending_itsm",
             "cal_list_events",
+            "cal_delete_event",
+            "cal_query_schedule",
+            "cal_check_conflicts",
         ],
     }
 
@@ -166,6 +246,9 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     if "--selftest" in sys.argv:
         print(_j(run_selftest()))
+        raise SystemExit(0)
+    if "--register-mcp" in sys.argv:
+        print(_j(register_into_mcp_config()))
         raise SystemExit(0)
     if MCPServer is None:
         sys.stderr.write(f"MCP SDK import error: {_MCP_IMPORT_ERROR}\n")

@@ -6,12 +6,12 @@ Tập tin này định nghĩa bối cảnh, kiến trúc, quy tắc phát triể
 
 ## 1. Tổng Quan Dự Án & Kiến Trúc Cốt Lõi
 
-- **Tên dự án:** `DUC_CalendarSync_AIBridge`
+- **Tên dự án:** `DUC_CalendarSync_AIBridge` (`v1.1.0`)
 - **Tài khoản GitHub chính thức:** `DucWorker97` (`https://github.com/DucWorker97/DUC_CalendarSync_AIBridge.git`)
-- **Mục tiêu:** MCP Server (`stdio` JSON-RPC 2.0) chuyên trách **Đồng bộ Lịch biểu Tự động Đa Nền tảng** và **Tự động Nhắc Lịch Sự cố Chờ Bù Đơn ITSM (`Bxx`)**.
+- **Mục tiêu:** MCP Server (`stdio` JSON-RPC 2.0) chuyên trách **Đồng bộ Lịch biểu Tự động Đa Nền tảng 2 Chiều** và **Tự động Nhắc Lịch Sự cố Chờ Bù Đơn ITSM (`Bxx`)**.
 - **3 Nền tảng Lịch tích hợp:**
-  1. **Google Calendar (`src/gcalendar_adapter.py`):** Đẩy trực tiếp qua `gcalendar` OAuth CLI (`mutate recurring` / `mutate create` với `--send-updates none`, có kiểm tra chống trùng lặp Idempotent `_find_existing_gcal_event`) + sinh liên kết 1-Click Google Calendar Web URL kèm `RRULE`.
-  2. **Microsoft Outlook Desktop (`src/outlook_adapter.py`):** Đồng bộ trực tiếp qua MAPI COM (`win32com.client`, thư mục `Lịch` `olFolderCalendar = 9`, `MeetingStatus = 0` không gửi email làm phiền người ngoài, chống trùng lặp theo thẻ `[SMARTOPS-ID:...]`) + liên kết 1-Click Outlook Web Deep-Link.
+  1. **Google Calendar (`src/gcalendar_adapter.py`):** Đẩy/xóa/truy vấn trực tiếp qua `gcalendar` OAuth CLI (`mutate recurring` / `mutate create` / `mutate delete` / `readonly list` với `--send-updates none`, có kiểm tra chống trùng lặp Idempotent `_find_existing_gcal_event`) + sinh liên kết 1-Click Google Calendar Web URL kèm `RRULE`.
+  2. **Microsoft Outlook Desktop (`src/outlook_adapter.py`):** Đồng bộ/xóa/truy vấn trực tiếp qua MAPI COM (`win32com.client`, thư mục `Lịch` `olFolderCalendar = 9`, `MeetingStatus = 0` không gửi email làm phiền người ngoài, chống trùng lặp theo thẻ `[SMARTOPS-ID:...]`) + liên kết 1-Click Outlook Web Deep-Link.
   3. **Chuẩn Quốc tế iCalendar RFC 5545 (`src/ics_exporter.py`):** Xuất tệp `.ics` đơn lẻ và `DUC_SmartOps_Master_Schedule.ics` kèm múi giờ `Asia/Ho_Chi_Minh`, `RRULE`, `VALARM` và chữ ký `MD5`.
 
 ---
@@ -20,17 +20,17 @@ Tập tin này định nghĩa bối cảnh, kiến trúc, quy tắc phát triể
 
 ```text
 DUC_CalendarSync_AIBridge/
-├── server.py                        # Entrypoint MCP Server (5 tools + --selftest)
+├── server.py                        # Entrypoint MCP Server (8 tools + --selftest + --register-mcp)
 ├── src/
 │   ├── __init__.py
 │   ├── models.py                    # SmartOpsCalendarEvent + 3 chuỗi lịch vận hành chuẩn
-│   ├── calendar_engine.py           # Bộ điều phối trung tâm (status, sync, create, remind, list)
+│   ├── calendar_engine.py           # Bộ điều phối trung tâm (8 nghiệp vụ cốt lõi)
 │   ├── gcalendar_adapter.py         # Cầu nối Google Calendar OAuth CLI + 1-Click Web URL
 │   ├── outlook_adapter.py           # Cầu nối Microsoft Outlook Desktop MAPI COM + Web URL
 │   ├── ics_exporter.py              # Bộ xuất chuẩn RFC 5545 (.ics) + MD5
 │   └── itsm_reminder_watcher.py     # Quét sổ cái THEO-DOI-BU-TICKET-ITSM.md & tự đặt lịch nhắc Bxx
 ├── tests/
-│   └── test_calendar_mcp.py         # Bộ kiểm thử Pytest (5/5 PASS)
+│   └── test_calendar_mcp.py         # Bộ kiểm thử Pytest (6/6 PASS)
 ├── exports/                         # Thư mục lưu tệp .ics và custom_events.json
 ├── HANDOFF-MACHINE-TRANSFER.md      # Tài liệu bàn giao chuyển máy & tiếp quản
 ├── pytest.ini                       # Cấu hình Pytest (pythonpath = .)
@@ -41,13 +41,16 @@ DUC_CalendarSync_AIBridge/
 
 ---
 
-## 3. Danh Mục 5 MCP Tools Đã Triển Khai (`v1.0.0`)
+## 3. Danh Mục 8 MCP Tools Đã Triển Khai (`v1.1.0`)
 
 1. `cal_status`: Kiểm tra kết nối Google Calendar OAuth, Microsoft Outlook Desktop MAPI, kho `.ics` và số lượng đơn `Bxx` chờ bù.
 2. `cal_sync_all`: Đồng bộ tức thì 3 chuỗi lịch vận hành chuẩn (`DAILY_BACKUP_1745`, `WEEKLY_REPORT_SUN_1500`, `MONTHLY_ITSM_28_1600`) và lịch tùy chỉnh lên cả 3 nền tảng.
 3. `cal_create_event`: Đặt lịch sự kiện mới tức thì (hỗ trợ lặp `NONE`, `DAILY_WORKDAYS`, `WEEKLY_SUN`, `MONTHLY_28`).
 4. `cal_remind_pending_itsm`: Quét sổ cái `THEO-DOI-BU-TICKET-ITSM.md` (hoặc nhận trực tiếp Candidate `Bxx`) để tự động ghim lịch nhắc bù đơn + mẫu câu hỏi Mã nhân viên (`V0xxxx` — Quy tắc 4).
 5. `cal_list_events`: Liệt kê toàn bộ lịch trình đang quản lý kèm liên kết 1-Click.
+6. `cal_delete_event`: Xóa sự kiện tùy chỉnh theo `event_id` trên kho `.ics`, Microsoft Outlook Desktop & Google Calendar (bảo vệ 3 chuỗi lịch hệ thống).
+7. `cal_query_schedule`: Đọc lịch trình thực tế 2 chiều trong ngày/tuần hợp nhất từ Managed Store, Google Calendar & Outlook Desktop.
+8. `cal_check_conflicts`: Kiểm tra xung đột lịch họp (Free-Busy Finder) và tự động gợi ý 3 khung giờ trống gần nhất trong giờ hành chính.
 
 ---
 
@@ -77,4 +80,4 @@ DUC_CalendarSync_AIBridge/
 | 09/11/2026 | Antigravity (Session 1) | Khởi tạo kiến trúc **DUC_CalendarSync_AIBridge v1.0.0** gồm 5 MCP Tools (`cal_status`, `cal_sync_all`, `cal_create_event`, `cal_remind_pending_itsm`, `cal_list_events`), 3 chuỗi lịch vận hành tự động (`DAILY_BACKUP_1745`, `WEEKLY_REPORT_SUN_1500`, `MONTHLY_ITSM_28_1600`), bộ xuất iCalendar RFC 5545 (`src/ics_exporter.py`), adapter Google Calendar OAuth CLI (`src/gcalendar_adapter.py`), adapter Outlook MAPI COM (`src/outlook_adapter.py`), bộ quét nhắc bù đơn ITSM (`src/itsm_reminder_watcher.py`) và bộ kiểm thử tự động (`tests/test_calendar_mcp.py`). |
 | 09/11/2026 | Antigravity (Session 2 — Handoff) | Chuẩn bị bàn giao chuyển máy: Nâng cấp `src/outlook_adapter.py` sang `GetActiveObject("Outlook.Application")`; tối ưu `locate_gcalendar_cli()` trong `src/gcalendar_adapter.py`; bổ sung tương thích kép MCP SDK v1/v2 (`MCPServer` / `FastMCP`) trong `server.py`; thêm `pytest.ini` & fixture `tmp_path` cục bộ tương thích Python 3.12 trên Windows; tạo `AGENTS.md`, `HANDOFF-MACHINE-TRANSFER.md`, `exports/.gitkeep`; đồng bộ Git lên GitHub `DucWorker97/DUC_CalendarSync_AIBridge`. |
 | 09/11/2026 | Antigravity (Session 2 — Collaborator) | Cấp quyền cộng tác viên (`Collaborator - write`, Invitation ID `342344645`) cho tài khoản **`DucWorker19`** trên repository GitHub `DucWorker97/DUC_CalendarSync_AIBridge`. |
-| 09/11/2026 | Antigravity (Session 3 — Sync & Merge) | Tiếp quản trên máy chính (`D:\DucWorker\DUC_SmartOps_AIHub\mcp_bridges\DUC_CalendarSync_AIBridge`): Hợp nhất cấu hình `pytest.ini` (`pythonpath = .`), tương thích kép `MCPServer`/`FastMCP`, cơ chế phát hiện `gcalendar` CLI (`.exe` + PATH fallback), kết nối Outlook COM (`GetActiveObject` + `Dispatch` fallback) và tài liệu `AGENTS.md`; xác minh 100% kiểm thử (`compileall`, `--selftest`, `pytest` 5/5 PASS) và đồng bộ với `origin/main`. |
+| 09/11/2026 | Antigravity (Session 3 — Sync & v1.1.0) | Tiếp quản trên máy chính (`D:\DucWorker\DUC_SmartOps_AIHub\mcp_bridges\DUC_CalendarSync_AIBridge`): Hợp nhất cấu hình `pytest.ini`, tương thích kép `MCPServer`/`FastMCP`, fallback `gcalendar` CLI & Outlook COM; đăng ký `DUC_CalendarSync_AIBridge` vào `mcp_config.json`; đồng bộ thật `cal_sync_all(dry_run=False)` lên Google Calendar & Outlook Desktop; nâng cấp lên **v1.1.0** với 8 MCP Tools (`+cal_delete_event`, `+cal_query_schedule`, `+cal_check_conflicts`, `+--register-mcp`) và đạt `6/6` Pytest PASS. |

@@ -217,3 +217,90 @@ def sync_events_to_outlook(
         "synced_count": created_count + updated_count,
         "items": results,
     }
+
+
+def delete_event_from_outlook(
+    event_id: str,
+    title: str = "",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    sync_tag = f"[SMARTOPS-ID:{event_id}]"
+    if dry_run:
+        return {
+            "status": "DRY_RUN",
+            "event_id": event_id,
+            "action": "WOULD_DELETE_OUTLOOK",
+        }
+    try:
+        outlook = _get_active_outlook()
+        ns = outlook.GetNamespace("MAPI")
+        cal_folder = ns.GetDefaultFolder(OL_FOLDER_CALENDAR)
+        existing = _find_existing_appointment(cal_folder, sync_tag, title or event_id)
+        if existing is not None:
+            existing.Delete()
+            return {
+                "status": "SUCCESS",
+                "event_id": event_id,
+                "action": "DELETED_FROM_OUTLOOK",
+            }
+        return {
+            "status": "SUCCESS",
+            "event_id": event_id,
+            "action": "NOT_FOUND_IN_OUTLOOK",
+        }
+    except Exception as e:
+        return {
+            "status": "SKIPPED",
+            "event_id": event_id,
+            "error": str(e),
+        }
+
+
+def fetch_outlook_events_in_range(
+    start_dt: datetime,
+    end_dt: datetime,
+    max_items: int = 100,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    try:
+        outlook = _get_active_outlook()
+        ns = outlook.GetNamespace("MAPI")
+        cal_folder = ns.GetDefaultFolder(OL_FOLDER_CALENDAR)
+        items = cal_folder.Items
+        total = items.Count
+        scan_limit = min(total, 250)
+        for idx in range(total, max(0, total - scan_limit), -1):
+            try:
+                it = items.Item(idx)
+                raw_start = getattr(it, "Start", None)
+                if raw_start is None:
+                    continue
+                st_naive = datetime(
+                    raw_start.year,
+                    raw_start.month,
+                    raw_start.day,
+                    raw_start.hour,
+                    raw_start.minute,
+                    raw_start.second,
+                )
+                dur = int(getattr(it, "Duration", 30) or 30)
+                en_naive = st_naive.replace(second=0, microsecond=0)
+                from datetime import timedelta
+                en_naive = st_naive + timedelta(minutes=dur)
+                if en_naive >= start_dt and st_naive <= end_dt:
+                    out.append({
+                        "source": "outlook_desktop",
+                        "title": str(getattr(it, "Subject", "") or "(Không tiêu đề)"),
+                        "start_dt": st_naive.isoformat(timespec="seconds"),
+                        "end_dt": en_naive.isoformat(timespec="seconds"),
+                        "duration_minutes": dur,
+                        "location": str(getattr(it, "Location", "") or ""),
+                        "is_recurring": bool(getattr(it, "IsRecurring", False)),
+                    })
+                    if len(out) >= max_items:
+                        break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out

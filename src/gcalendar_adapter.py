@@ -235,3 +235,103 @@ def sync_events_to_gcalendar(
         "total_events": len(items),
         "items": items,
     }
+
+
+def delete_event_from_gcalendar(
+    ev: SmartOpsCalendarEvent,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    if dry_run:
+        return {
+            "status": "DRY_RUN",
+            "event_id": ev.event_id,
+            "action": "WOULD_DELETE_GCAL",
+        }
+    status_info = get_gcalendar_status()
+    cli_path = status_info.get("cli_path")
+    is_authed = bool(status_info.get("authenticated", False))
+    if not is_authed or not cli_path:
+        return {
+            "status": "SKIPPED",
+            "event_id": ev.event_id,
+            "action": "CLI_NOT_AUTHENTICATED",
+        }
+    existing = _find_existing_gcal_event(cli_path, ev)
+    if not existing or not existing.get("id"):
+        return {
+            "status": "SUCCESS",
+            "event_id": ev.event_id,
+            "action": "NOT_FOUND_ON_GCAL",
+        }
+    gcal_id = str(existing["id"])
+    try:
+        proc = subprocess.run(
+            [cli_path, "mutate", "delete", gcal_id, "--send-updates", "none"],
+            capture_output=True,
+            text=True,
+            timeout=12,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        return {
+            "status": "SUCCESS" if proc.returncode == 0 else "WARN",
+            "event_id": ev.event_id,
+            "gcal_event_id": gcal_id,
+            "action": "DELETED_FROM_GCAL" if proc.returncode == 0 else "DELETE_WARN",
+        }
+    except Exception as e:
+        return {
+            "status": "WARN",
+            "event_id": ev.event_id,
+            "error": str(e),
+        }
+
+
+def fetch_gcalendar_events_in_range(
+    start_iso: str,
+    end_iso: str,
+    max_items: int = 50,
+) -> List[Dict[str, Any]]:
+    status_info = get_gcalendar_status()
+    cli_path = status_info.get("cli_path")
+    is_authed = bool(status_info.get("authenticated", False))
+    if not is_authed or not cli_path:
+        return []
+    try:
+        proc = subprocess.run(
+            [
+                cli_path, "readonly", "list",
+                "--start", start_iso,
+                "--end", end_iso,
+                "--max", str(max_items),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        if proc.returncode != 0 or not proc.stdout:
+            return []
+        data = json.loads(proc.stdout)
+        events_list = data if isinstance(data, list) else data.get("items", data.get("events", []))
+        if not isinstance(events_list, list):
+            return []
+        out: List[Dict[str, Any]] = []
+        for item in events_list:
+            st_obj = item.get("start", {})
+            en_obj = item.get("end", {})
+            st_str = st_obj.get("dateTime") or st_obj.get("date") or ""
+            en_str = en_obj.get("dateTime") or en_obj.get("date") or ""
+            out.append({
+                "source": "google_calendar",
+                "title": str(item.get("summary", "(Không tiêu đề)")),
+                "start_dt": st_str,
+                "end_dt": en_str,
+                "location": str(item.get("location", "")),
+                "html_link": str(item.get("htmlLink", "")),
+            })
+        return out
+    except Exception:
+        return []

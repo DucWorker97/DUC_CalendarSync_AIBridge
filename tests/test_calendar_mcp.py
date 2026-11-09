@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-test_calendar_mcp.py — Bộ Kiểm Thử Tự Động cho DUC_CalendarSync_AIBridge
+test_calendar_mcp.py — Bộ Kiểm Thử Tự Động cho DUC_CalendarSync_AIBridge (v1.1.0)
 ========================================================================
 Kiểm định:
 1. Sinh 3 lịch biểu vận hành tự động & xuất tệp chuẩn quốc tế RFC 5545 (.ics).
 2. Quét sổ cái ITSM (THEO-DOI-BU-TICKET-ITSM.md) phát hiện Candidate Bxx đang chờ bù đơn / thiếu Mã NV.
 3. Tự động đặt lịch nhắc bù đơn ITSM (schedule_pending_itsm_reminder) kèm mẫu câu hỏi Mã NV (Quy tắc 4).
-4. Kiểm thử 5 MCP Tools và chế độ `--selftest` của `server.py`.
+4. Quản lý vòng đời sự kiện (tạo & xóa sự kiện tùy chỉnh, bảo vệ sự kiện hệ thống).
+5. Truy vấn lịch trình 2 chiều (engine_query_schedule) & phát hiện xung đột (engine_check_conflicts).
+6. Kiểm thử 8 MCP Tools, đăng ký mcp_config.json và chế độ `--selftest` của `server.py`.
 ========================================================================
 """
 
@@ -19,14 +21,17 @@ from typing import Iterator
 import pytest
 
 from src.calendar_engine import (
+    engine_check_conflicts,
     engine_create_event,
+    engine_delete_event,
     engine_get_status,
     engine_list_events,
+    engine_query_schedule,
     engine_remind_pending_itsm,
     engine_sync_all,
 )
 from src.itsm_reminder_watcher import scan_pending_itsm_candidates
-from server import run_selftest
+from server import register_into_mcp_config, run_selftest
 
 
 @pytest.fixture
@@ -58,7 +63,7 @@ def test_engine_sync_and_list(tmp_path: Path):
     assert lst["count"] == 3
 
 
-def test_engine_create_custom_event(tmp_path: Path):
+def test_engine_create_and_delete_custom_event(tmp_path: Path):
     res = engine_create_event(
         title="[MES-Ops] Kiểm tra máy in nhãn Xưởng C9",
         start_iso="2026-11-11T14:30:00",
@@ -68,9 +73,52 @@ def test_engine_create_custom_event(tmp_path: Path):
         base_dir=tmp_path,
     )
     assert res["status"] == "SUCCESS"
+    ev_id = res["event"]["event_id"]
     assert res["event"]["title"] == "[MES-Ops] Kiểm tra máy in nhãn Xưởng C9"
     assert "calendar.google.com" in res["google_web_url"]
     assert "outlook.office.com" in res["outlook_web_url"]
+
+    # Bảo vệ sự kiện hệ thống
+    prot = engine_delete_event("DAILY_BACKUP_1745", targets=("ics",), base_dir=tmp_path)
+    assert prot["status"] == "PROTECTED_SYSTEM_EVENT"
+
+    # Xóa sự kiện tùy chỉnh
+    del_res = engine_delete_event(ev_id, targets=("ics",), dry_run=False, base_dir=tmp_path)
+    assert del_res["status"] == "SUCCESS"
+    assert del_res["found_in_custom_store"] is True
+    assert del_res["ics_deleted"] is True
+
+
+def test_query_schedule_and_conflict_checker(tmp_path: Path):
+    q = engine_query_schedule(
+        date_from_iso="2026-11-09T08:00:00",
+        days=7,
+        include_live_sources=False,
+        base_dir=tmp_path,
+    )
+    assert q["status"] == "SUCCESS"
+    assert q["total_items"] >= 1
+
+    # Kiểm tra trùng khung giờ sao lưu 17:45 ngày 09/11/2026
+    c_busy = engine_check_conflicts(
+        start_iso="2026-11-09T17:45:00",
+        duration_minutes=15,
+        include_live_sources=False,
+        base_dir=tmp_path,
+    )
+    assert c_busy["status"] == "CONFLICT_DETECTED"
+    assert c_busy["has_conflict"] is True
+    assert len(c_busy["suggested_free_slots"]) == 3
+
+    # Kiểm tra khung giờ trống 10:00 sáng
+    c_free = engine_check_conflicts(
+        start_iso="2026-11-09T10:00:00",
+        duration_minutes=30,
+        include_live_sources=False,
+        base_dir=tmp_path,
+    )
+    assert c_free["status"] == "FREE"
+    assert c_free["has_conflict"] is False
 
 
 def test_itsm_pending_scanner_and_auto_reminder(tmp_path: Path):
@@ -117,7 +165,13 @@ def test_itsm_all_clear_when_zero_pending(tmp_path: Path):
     assert rem["scheduled"] is False
 
 
-def test_mcp_server_selftest():
+def test_mcp_server_selftest_and_register(tmp_path: Path):
     st = run_selftest()
     assert st["selftest"] == "PASS"
-    assert len(st["tools"]) == 5
+    assert st["version"] == "1.1.0"
+    assert len(st["tools"]) == 8
+
+    dummy_cfg = tmp_path / "mcp_config.json"
+    reg = register_into_mcp_config(config_path=dummy_cfg)
+    assert reg["status"] == "REGISTERED"
+    assert dummy_cfg.is_file()
