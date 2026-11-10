@@ -174,7 +174,7 @@ def execute_morning_routine(
 
 def execute_evening_routine(
     date_iso: str = "",
-    auto_remind_itsm: bool = True,
+    auto_remind_itsm: bool = False,  # 10/11/2026: Duc tat tu tao lich nhac Outlook/Google; bat lai bang --remind-itsm
     dry_run: bool = False,
     export_md: bool = True,
     repo_root: Optional[Path] = None,
@@ -276,7 +276,7 @@ def execute_auto_routine(
     if now.hour < 14:
         return execute_morning_routine(date_iso=date_iso, dry_run=dry_run, export_md=export_md, repo_root=repo_root)
     else:
-        return execute_evening_routine(date_iso=date_iso, auto_remind_itsm=True, dry_run=dry_run, export_md=export_md, repo_root=repo_root)
+        return execute_evening_routine(date_iso=date_iso, auto_remind_itsm=False, dry_run=dry_run, export_md=export_md, repo_root=repo_root)
 
 
 def _query_single_task(task_name: str) -> Dict[str, Any]:
@@ -456,7 +456,7 @@ def run_daemon_loop(check_interval_seconds: int = 30) -> None:
             # Kiem tra Ca Chieu (17:30 - 17:35)
             if is_workday and now.hour == 17 and 30 <= now.minute < 35 and last_evening_date != today_str:
                 print(f"[{datetime.now().isoformat()}] 🌇 Kích hoạt Bản tin Cuối ca Chiều & Bù đơn ITSM...")
-                res_e = execute_evening_routine(auto_remind_itsm=True, dispatch_channels=["file", "zalo"], dispatch_dry_run=False)
+                res_e = execute_evening_routine(auto_remind_itsm=False, dispatch_channels=["file", "zalo"], dispatch_dry_run=False)
                 last_evening_date = today_str
                 print(f"[{datetime.now().isoformat()}] ✅ Hoàn tất Bản tin Chiều: {res_e.get('status')}")
 
@@ -487,6 +487,8 @@ def main() -> None:
     parser.add_argument("--dispatch", action="store_true", help="Bắn bản tin ra các kênh thông báo (WeChat, Zalo)")
     parser.add_argument("--channels", default="file,wechat,zalo", help="Danh sách kênh phân phối (phân tách bởi dấu phẩy, mặc định: file,wechat,zalo)")
     parser.add_argument("--confirm-send", action="store_true", help="Xác nhận gửi thật (mặc định là Preview Dry-Run)")
+    parser.add_argument("--remind-itsm", action="store_true",
+                        help="(EVENING) Tạo lịch nhắc bù đơn [ITSM-Remind] trên Outlook/Google/.ics — mặc định TẮT (Đức chốt 10/11/2026)")
     args = parser.parse_args()
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -526,7 +528,7 @@ def main() -> None:
     elif args.mode == "EVENING":
         out = execute_evening_routine(
             date_iso=args.date,
-            auto_remind_itsm=True,
+            auto_remind_itsm=args.remind_itsm,
             dry_run=args.dry_run,
             export_md=export_md,
             dispatch_channels=dispatch_chs,

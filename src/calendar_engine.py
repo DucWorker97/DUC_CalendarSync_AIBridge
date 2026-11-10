@@ -153,6 +153,8 @@ def engine_get_status(
             "total_candidates": itsm_scan.get("total_candidates", 0),
             "done_count": itsm_scan.get("done_count", 0),
             "pending_count": itsm_scan.get("pending_count", 0),
+            "scan_ok": itsm_scan.get("scan_ok", False),
+            "stale_status_count": len(itsm_scan.get("stale_status", [])),
         },
     }
 
@@ -553,6 +555,14 @@ def engine_daily_briefing(
     itsm_scan = scan_pending_itsm_candidates(ledger_path=ledger_path)
     pending_count = int(itsm_scan.get("pending_count", 0))
     pending_list = itsm_scan.get("pending_candidates", [])
+    scan_ok = bool(itsm_scan.get("scan_ok", False))
+    stale_list = itsm_scan.get("stale_status", [])
+    if pending_count > 0:
+        itsm_check = None
+    elif not scan_ok:
+        itsm_check = "⚠️ Không đọc được sổ bù đơn ITSM (THEO-DOI-BU-TICKET-ITSM.md) — chưa kết luận, cần kiểm tay."
+    else:
+        itsm_check = "Sổ THEO-DOI: 0 Candidate Bxx đang chờ bù."
 
     if mode == "MORNING":
         shift_label = "🌅 BẢN TIN ĐẦU CA SÁNG (08:00 — MORNING BRIEFING)"
@@ -561,7 +571,7 @@ def engine_daily_briefing(
             (
                 f"Ưu tiên thu thập Mã nhân viên (V0xxxx) và bù {pending_count} đơn ITSM đang chờ."
                 if pending_count > 0
-                else "Sổ cái ITSM sạch 100% (0 đơn Bxx tồn đọng)."
+                else itsm_check
             ),
             "Kiểm tra kết nối hệ thống MES / Máy in nhãn tại các xưởng trước giờ cao điểm.",
         ]
@@ -571,7 +581,7 @@ def engine_daily_briefing(
             (
                 f"Khẩn: Hoàn tất bù {pending_count} đơn ITSM tồn đọng hoặc đặt lịch nhắc sáng mai."
                 if pending_count > 0
-                else "Xác nhận 100% sự cố trong ngày đã được ghi nhận và đóng Ticket ITSM (0 tồn đọng)."
+                else itsm_check
             ),
             "Theo dõi mốc 17:45: Dịch vụ nền kích hoạt Sao lưu Đám mây Tự động (Kho Nóng ZIP + MD5 & Kho Lạnh H.265 — Quy tắc 12).",
             "Kiểm tra bảng tổng hợp Inbox Digest trước khi kết thúc ca.",
@@ -601,8 +611,15 @@ def engine_daily_briefing(
         md_lines.append(
             "- 💡 *Mẫu hỏi Mã NV:* `Nhờ anh/chị cung cấp thêm Mã nhân viên (V0xxxx / 工号) để em lưu hồ sơ hỗ trợ nhé / 麻烦提供一下工号以便系统建单。`"
         )
+    elif not scan_ok:
+        md_lines.append("- ⚠️ **CHƯA KẾT LUẬN:** không đọc được Candidate `Bxx` nào trong sổ bù đơn — kiểm tay `THEO-DOI-BU-TICKET-ITSM.md`.")
     else:
-        md_lines.append("- ✅ **ALL CLEAR:** 100% Candidate `Bxx` đã có mã `INC...` và đóng hoàn tất.")
+        md_lines.append("- ✅ Sổ THEO-DOI: 0 Candidate `Bxx` đang chờ bù.")
+    if stale_list:
+        md_lines.append(
+            f"- ℹ️ {len(stale_list)} mục đã có mã INC nhưng ô trạng thái trong sổ còn ghi chờ bù: "
+            + ", ".join(x.get("candidate_id", "Bxx") for x in stale_list)
+        )
 
     md_lines.extend(["", "#### ✅ 3. Checklist Trọng Tâm Theo Ca"])
     for c_item in checklist:
@@ -617,6 +634,8 @@ def engine_daily_briefing(
         "today_events": today_items,
         "itsm_pending_count": pending_count,
         "itsm_pending_candidates": pending_list,
+        "itsm_scan_ok": scan_ok,
+        "itsm_stale_status": stale_list,
         "action_checklist": checklist,
         "markdown_briefing": "\n".join(md_lines),
     }

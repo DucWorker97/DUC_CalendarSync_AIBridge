@@ -142,6 +142,7 @@ def format_for_wechat_markdown(briefing_data: Dict[str, Any]) -> str:
     today_items = _deduplicate_events(briefing_data.get("today_events", []))
     pending_count = int(briefing_data.get("itsm_pending_count", 0))
     pending_list = briefing_data.get("itsm_pending_candidates", [])
+    scan_ok = bool(briefing_data.get("itsm_scan_ok", False))  # thieu khoa -> KHONG bao ALL CLEAR
     checklist = briefing_data.get("action_checklist", [])
 
     lines: List[str] = [
@@ -152,8 +153,10 @@ def format_for_wechat_markdown(briefing_data: Dict[str, Any]) -> str:
 
     if pending_count > 0:
         lines.append(f"> **Bù đơn ITSM (`Bxx`):** <font color=\"warning\">{pending_count} đơn chờ bù / thiếu Mã NV</font>")
+    elif not scan_ok:
+        lines.append("> **Bù đơn ITSM (`Bxx`):** <font color=\"warning\">⚠️ Chưa đọc được sổ — chưa kết luận</font>")
     else:
-        lines.append("> **Bù đơn ITSM (`Bxx`):** <font color=\"info\">✅ ALL CLEAR (0 tồn đọng)</font>")
+        lines.append("> **Bù đơn ITSM (`Bxx`):** <font color=\"info\">0 Candidate chờ bù (theo sổ THEO-DOI)</font>")
 
     lines.append("")
     lines.append("#### 📅 1. Lịch Trình Chi Tiết")
@@ -175,8 +178,10 @@ def format_for_wechat_markdown(briefing_data: Dict[str, Any]) -> str:
             summary = it.get("summary", "")
             lines.append(f"- <font color=\"warning\">⚠️ [{cid}]</font> **{cust}**: {summary}")
         lines.append("> 💡 *Mẫu hỏi Mã NV (VI-ZH):* `Nhờ anh/chị cung cấp Mã nhân viên (V0xxxx) để em bù đơn ITSM / 麻烦提供一下工号。`")
+    elif not scan_ok:
+        lines.append("- <font color=\"warning\">⚠️ Không đọc được Candidate Bxx nào trong sổ bù đơn — kiểm tay.</font>")
     else:
-        lines.append("- <font color=\"info\">✅ 100% Candidate Bxx đã có mã INC... và đóng hoàn tất.</font>")
+        lines.append("- <font color=\"info\">0 Candidate Bxx chờ bù (theo sổ THEO-DOI).</font>")
 
     lines.append("")
     lines.append("#### ✅ 3. Checklist Trọng Tâm")
@@ -201,6 +206,8 @@ def format_for_zalo_text(briefing_data: Dict[str, Any]) -> str:
     today_items = _deduplicate_events(briefing_data.get("today_events", []))
     pending_count = int(briefing_data.get("itsm_pending_count", 0))
     pending_list = briefing_data.get("itsm_pending_candidates", [])
+    scan_ok = bool(briefing_data.get("itsm_scan_ok", False))  # thieu khoa -> KHONG bao ALL CLEAR
+    stale_list = briefing_data.get("itsm_stale_status", [])
     checklist = briefing_data.get("action_checklist", [])
 
     lines: List[str] = [
@@ -212,8 +219,10 @@ def format_for_zalo_text(briefing_data: Dict[str, Any]) -> str:
 
     if pending_count > 0:
         lines.append(f"🎫 Bù đơn ITSM (Bxx): ⚠️ {pending_count} đơn chờ xử lý")
+    elif not scan_ok:
+        lines.append("🎫 Bù đơn ITSM (Bxx): ⚠️ chưa đọc được sổ — chưa kết luận")
     else:
-        lines.append("🎫 Bù đơn ITSM (Bxx): ✅ ALL CLEAR (0 tồn đọng)")
+        lines.append("🎫 Bù đơn ITSM (Bxx): 0 Candidate chờ bù (theo sổ)")
 
     lines.append("──────────────────────────")
     lines.append("📅 LỊCH TRÌNH TRONG NGÀY:")
@@ -230,8 +239,13 @@ def format_for_zalo_text(briefing_data: Dict[str, Any]) -> str:
         for it in pending_list:
             lines.append(f"  • [{it.get('candidate_id')}] {it.get('customer')}: {it.get('summary')}")
         lines.append("  💡 Mẫu hỏi Mã NV: Nhờ anh/chị cung cấp thêm Mã nhân viên (V0xxxx) nhé!")
+    elif not scan_ok:
+        lines.append("  ⚠️ Không đọc được Candidate nào trong THEO-DOI-BU-TICKET-ITSM.md — kiểm tay")
     else:
-        lines.append("  ✅ Sổ cái ITSM sạch 100% (0 đơn tồn đọng)")
+        lines.append("  • 0 Candidate Bxx chờ bù (theo sổ THEO-DOI)")
+    if stale_list:
+        lines.append(f"  ℹ️ {len(stale_list)} mục đã có INC nhưng ô trạng thái chưa cập nhật: "
+                     + ", ".join(x.get("candidate_id", "Bxx") for x in stale_list))
 
     lines.append("──────────────────────────")
     lines.append("✅ CHECKLIST TRỌNG TÂM THEO CA:")
